@@ -48,6 +48,12 @@ void IPCServer::UpdateStatus(const StatusSnapshot &status) {
   s_status = status;
 }
 
+void IPCServer::UpdateQualitySnapshot(int fpsCap, float resolutionScale) {
+  std::lock_guard<std::mutex> lock(s_statusMutex);
+  s_status.fpsCap = fpsCap;
+  s_status.resolutionScale = resolutionScale;
+}
+
 std::vector<IPCMessage> IPCServer::GetPendingCommands() {
   std::lock_guard<std::mutex> lock(s_cmdMutex);
   std::vector<IPCMessage> cmds = s_cmdQueue;
@@ -128,6 +134,8 @@ void IPCServer::ProcessClient(HANDLE hPipe) {
           resp["state"] = snap.state;
           resp["tier"] = snap.tier;
           resp["activePlugin"] = snap.activePlugin;
+          resp["fpsCap"] = snap.fpsCap;
+          resp["resolutionScale"] = snap.resolutionScale;
 
           std::string respStr = resp.dump() + "\n";
           DWORD bytesWritten = 0;
@@ -205,8 +213,12 @@ void IPCServer::ProcessClient(HANDLE hPipe) {
             } else {
               msg.floatArg = j.value("value", 0.0f);
             }
-          } else if (cmd == "set_quality_tier") {
-            msg.strArg1 = j.value("tier", "");
+          } else if (cmd == "set_fps_cap") {
+            msg.floatArg = j.value("fps", 60.0f);
+          } else if (cmd == "set_resolution_scale") {
+            msg.floatArg = j.value("scale", 1.0f);
+          } else if (cmd == "set_quality_auto") {
+            // no args needed
           } else if (cmd == "remove_effect") {
             // no args needed
           } else if (cmd == "quit") {

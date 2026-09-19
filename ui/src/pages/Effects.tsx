@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
-import { setEffect, removeEffect, setSetting, setQualityTier, applyWallpaper, importWallpaper, generateDepthMap, getStatus, listWallpapers, fileExists } from '../ipc';
+import { setEffect, removeEffect, setSetting, setFpsCap, setResolutionScale, setQualityAuto, applyWallpaper, importWallpaper, generateDepthMap, getStatus, listWallpapers, fileExists } from '../ipc';
 import { saveWallpaperPairing, loadEffectSettings, saveEffectSettings, saveActiveSession, getActiveSession } from '../store';
 import { open } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
 export default function Effects() {
-  const [quality, setQuality] = useState('balanced');
+  const [fpsCap, setFpsCapState] = useState(60);
+  const [resolutionScale, setResolutionScaleState] = useState(1.0);
+  const [liveFps, setLiveFps] = useState<number>(0);
 
   // Cursor Reveal Settings
   const [brushSize, setBrushSize] = useState(160);
@@ -70,6 +72,60 @@ export default function Effects() {
   const [boGlowIntensity, setBOGlowIntensity] = useState(1.0);
   const [boOutlineColor, setBOOutlineColor] = useState('#ffffff');
 
+  // Push all effect settings to backend (called after re-initializing renderer)
+  const rePushActiveEffectSettings = async () => {
+    if (activeEffect === 'cursor_reveal') {
+      await setSetting('brushSize', brushSize);
+      await setSetting('brushHardness', crBrushHardness);
+      await setSetting('trailLength', crTrailLength);
+      await setSetting('fadeSpeed', crFadeSpeed);
+      await setSetting('fadeWhenResting', crFadeWhenResting ? 1 : 0);
+    } else if (activeEffect === 'gravity_lens') {
+      await setSetting('lensStrength', glStrength);
+      await setSetting('lensRadius', glRadius);
+      await setSetting('stiffness', glStiffness);
+      await setSetting('damping', glDamping);
+      await setSetting('dispersion', glDispersion);
+      await setSetting('coreDarkening', glDarkening);
+      await setSetting('trailLength', glTrailLength);
+      await setSetting('fadeDecay', glFadeDecay);
+    } else if (activeEffect === 'gravity_lens_transparent') {
+      await setSetting('pressDepth', gltDepth);
+      await setSetting('pressRadius', gltRadius);
+      await setSetting('stiffness', gltStiffness);
+      await setSetting('damping', gltDamping);
+      await setSetting('dispersion', gltDispersion);
+      await setSetting('coreDarkening', gltDarkening);
+      await setSetting('shadingStrength', gltShading);
+      await setSetting('trailLength', gltTrailLength);
+      await setSetting('fadeDecay', gltFadeDecay);
+    } else if (activeEffect === 'stone_press_v2') {
+      await setSetting('pressDepth', sp2Depth);
+      await setSetting('pressRadius', sp2Radius);
+      await setSetting('stiffness', sp2Stiffness);
+      await setSetting('damping', sp2Damping);
+      await setSetting('depthDarkening', sp2Darkening);
+      await setSetting('directionalShading', sp2DirectionalShading);
+      await setSetting('parallaxStrength', sp2ParallaxStrength);
+    } else if (activeEffect === 'brick_outline') {
+      await setSetting('brickWidth', boBrickWidth);
+      await setSetting('brickHeight', boBrickHeight);
+      await setSetting('lineThickness', boLineThickness);
+      await setSetting('effectRadius', boEffectRadius);
+      await setSetting('edgeSoftness', boEdgeSoftness);
+      await setSetting('glowIntensity', boGlowIntensity);
+      const hex = boOutlineColor;
+      const r = parseInt(hex.slice(1, 3), 16) / 255.0;
+      const g = parseInt(hex.slice(3, 5), 16) / 255.0;
+      const b = parseInt(hex.slice(5, 7), 16) / 255.0;
+      await setSetting('outlineColorR', r);
+      await setSetting('outlineColorG', g);
+      await setSetting('outlineColorB', b);
+    } else if (activeEffect === 'depth_parallax') {
+      await setSetting('parallaxStrength', parallaxStrength);
+    }
+  };
+
   useEffect(() => {
     const loadGlobals = async () => {
       try {
@@ -130,8 +186,8 @@ export default function Effects() {
           setsp2Radius(sp2Settings.pressRadius ?? 0.3);
           setsp2Stiffness(sp2Settings.stiffness ?? 50.0);
           setsp2Damping(sp2Settings.damping ?? 0.90);
-          setsp2Darkening(sp2Settings.depthDarkening ?? 0.6);
-          setsp2DirectionalShading(sp2Settings.directionalShading ?? 0.4);
+          setsp2Darkening(sp2Settings.depthDarkening ?? 0.0);
+          setsp2DirectionalShading(sp2Settings.directionalShading ?? 0.0);
           setsp2ParallaxStrength(sp2Settings.parallaxStrength ?? 0.2);
         }
 
@@ -213,22 +269,28 @@ export default function Effects() {
     const fetchStatus = async () => {
       try {
         const status = await getStatus();
-        if (status && status.activePlugin) {
-          // Convert PascalCase DLL name (e.g. "StonePressV2.dll") to snake_case UI name (e.g. "stone_press_v2")
-          let uiName = status.activePlugin
-            .replace('.dll', '')
-            .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
-            .toLowerCase();
-
-          // Validate it's a known effect
-          const knownEffects = ['cursor_reveal', 'gravity_lens', 'gravity_lens_transparent',
-                                'stone_press_v2', 'depth_parallax', 'brick_outline'];
-          if (!knownEffects.includes(uiName)) uiName = 'none';
-
-          const newActive = uiName === 'none' ? null : uiName;
-          setActiveEffect(newActive);
-          setSelectedEffect(prev => prev === null ? newActive : prev);
+        if (status) {
+          if (status.fpsCap !== undefined) setFpsCapState(status.fpsCap);
+          if (status.resolutionScale !== undefined) setResolutionScaleState(status.resolutionScale);
+          if (status.fps !== undefined) setLiveFps(status.fps);
+          
+          if (status.activePlugin) {
+            // Convert PascalCase DLL name (e.g. "StonePressV2.dll") to snake_case UI name (e.g. "stone_press_v2")
+            let uiName = status.activePlugin
+              .replace('.dll', '')
+              .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+              .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+              .toLowerCase();
+  
+            // Validate it's a known effect
+            const knownEffects = ['cursor_reveal', 'gravity_lens', 'gravity_lens_transparent',
+                                  'stone_press_v2', 'depth_parallax', 'brick_outline'];
+            if (!knownEffects.includes(uiName)) uiName = 'none';
+  
+            const newActive = uiName === 'none' ? null : uiName;
+            setActiveEffect(newActive);
+            setSelectedEffect(prev => prev === null ? newActive : prev);
+          }
         }
       } catch (err) {
         console.error("Failed to fetch status:", err);
@@ -283,9 +345,21 @@ export default function Effects() {
   const [layerA, setLayerA] = useState<string | null>(null);
   const [layerB, setLayerB] = useState<string | null>(null);
 
-  const handleQualityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setQuality(e.target.value);
-    setQualityTier(e.target.value);
+  const handleFpsCapChange = async (fps: number) => {
+    setFpsCapState(fps);
+    await setFpsCap(fps);
+  };
+
+  const handleResolutionScaleChange = async (scale: number) => {
+    setResolutionScaleState(scale);
+    await setResolutionScale(scale);
+    await rePushActiveEffectSettings();
+  };
+
+  const handleQualityAuto = async () => {
+    await setQualityAuto();
+    await rePushActiveEffectSettings();
+    // the polling getStatus will update the UI buttons automatically
   };
 
   const handleCRSettingChange = (key: string, val: number, setter: React.Dispatch<React.SetStateAction<number>>) => {
@@ -472,20 +546,38 @@ export default function Effects() {
     }, 50);
   };
 
-  const renderQualityTier = () => (
+  const renderQualityControls = () => (
     <div className="card" style={{ marginBottom: '2rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h2 style={{ margin: 0 }}>Render Quality</h2>
           <p style={{ color: 'var(--text-secondary)', margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>
-            Select the base render resolution.
+            Configure framerate and resolution scaling.
           </p>
         </div>
-        <select value={quality} onChange={handleQualityChange} style={{ width: '200px' }}>
-          <option value="low">Low (Half Res)</option>
-          <option value="balanced">Balanced (Auto)</option>
-          <option value="high">High (Native)</option>
-        </select>
+        <button className="primary" onClick={handleQualityAuto}>Auto Detect</button>
+      </div>
+      
+      <div style={{ display: 'flex', gap: '2rem', marginTop: '1.5rem' }}>
+        <div style={{ flex: 1 }}>
+          <h4 style={{ margin: '0 0 0.5rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            Frame Rate
+            <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-secondary)' }}>Live: {liveFps.toFixed(1)} FPS</span>
+          </h4>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className={fpsCap === 30 ? 'primary' : 'secondary'} onClick={() => handleFpsCapChange(30)} style={{ flex: 1 }}>30</button>
+            <button className={fpsCap === 60 ? 'primary' : 'secondary'} onClick={() => handleFpsCapChange(60)} style={{ flex: 1 }}>60</button>
+            <button className={fpsCap === 0 ? 'primary' : 'secondary'} onClick={() => handleFpsCapChange(0)} style={{ flex: 1 }}>Uncapped</button>
+          </div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <h4 style={{ margin: '0 0 0.5rem 0' }}>Resolution</h4>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className={resolutionScale === 1.0 ? 'primary' : 'secondary'} onClick={() => handleResolutionScaleChange(1.0)} style={{ flex: 1 }}>Native</button>
+            <button className={resolutionScale === 0.75 ? 'primary' : 'secondary'} onClick={() => handleResolutionScaleChange(0.75)} style={{ flex: 1 }}>75%</button>
+            <button className={resolutionScale === 0.5 ? 'primary' : 'secondary'} onClick={() => handleResolutionScaleChange(0.5)} style={{ flex: 1 }}>Half</button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -696,7 +788,7 @@ export default function Effects() {
         </div>
       </div>
 
-      {renderQualityTier()}
+      {renderQualityControls()}
 
       {/* Hero Section: Currently Configured Effect */}
       <div className="card" style={{ border: selectedEffect ? '1px solid var(--accent)' : '1px solid var(--border-color)', boxShadow: selectedEffect ? '0 8px 32px var(--accent-glow)' : '' }}>

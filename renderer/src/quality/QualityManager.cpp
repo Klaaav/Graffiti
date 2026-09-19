@@ -25,28 +25,43 @@ QualityTier QualityManager::GetTierSettings(QualityTierLevel level) {
     return tier;
 }
 
+static int s_fpsCap = 60;
+static float s_resolutionScale = 1.0f;
+static uint64_t s_cachedVramMB = 0;
+static std::string s_cachedAdapterName;
+
 void QualityManager::Initialize(uint64_t vramMB, const std::string& adapterName) {
     std::cout << "[Quality] Initializing QualityManager...\n";
-    
-    // Check for integrated graphics
-    std::string lowerAdapter = adapterName;
+    s_cachedVramMB = vramMB;
+    s_cachedAdapterName = adapterName;
+    ApplyAutoDetected();
+}
+
+void QualityManager::ApplyAutoDetected() {
+    std::string lowerAdapter = s_cachedAdapterName;
     std::transform(lowerAdapter.begin(), lowerAdapter.end(), lowerAdapter.begin(), ::tolower);
-    bool isIntegrated = (lowerAdapter.find("intel") != std::string::npos) || 
+    bool isIntegrated = (lowerAdapter.find("intel") != std::string::npos) ||
                         (lowerAdapter.find("radeon graphics") != std::string::npos);
 
-    QualityTierLevel initialLevel = QUALITY_TIER_BALANCED;
-
-    if (vramMB < 1536 || isIntegrated) {
-        std::cout << "[Quality] VRAM < 1.5GB or Integrated GPU detected. Defaulting to LOW tier.\n";
-        initialLevel = QUALITY_TIER_LOW;
+    if (s_cachedVramMB < 1536 || isIntegrated) {
+        s_fpsCap = 30;
+        s_resolutionScale = 0.5f;
+        std::cout << "[Quality] Auto -> 30 FPS / Half resolution (low VRAM or integrated GPU)\n";
     } else {
-        std::cout << "[Quality] Dedicated GPU detected. Defaulting to BALANCED tier.\n";
-        initialLevel = QUALITY_TIER_BALANCED;
+        s_fpsCap = 60;
+        s_resolutionScale = 1.0f;
+        std::cout << "[Quality] Auto -> 60 FPS / Native resolution\n";
     }
-
-    s_currentTier = GetTierSettings(initialLevel);
-    s_tierChanged = true;
 }
+
+void QualityManager::SetFpsCap(int fps) {
+    s_fpsCap = fps;
+    std::cout << "[Quality] FPS cap set to " << fps << "\n";
+}
+int QualityManager::GetFpsCap() { return s_fpsCap; }
+
+void QualityManager::SetResolutionScale(float scale) { s_resolutionScale = scale; }
+float QualityManager::GetResolutionScale() { return s_resolutionScale; }
 
 void QualityManager::SetQualityTierOverride(QualityTierLevel level) {
     if (s_currentTier.level != level) {

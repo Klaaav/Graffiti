@@ -1,0 +1,179 @@
+WORKSPACE DIRECTORY STRUCTURE
+===========================
+
++--- shared
+|   \--- ipc-schema.md
++--- ui
+|   +--- public
+|   |   +--- logos
+|   |   |   +--- Klaaav_logo.jpeg
+|   |   |   \--- Graffiti_logo.jpeg
+|   |   +--- vite.svg
+|   |   \--- tauri.svg
+|   +--- src
+|   |   +--- pages
+|   |   |   +--- scratch.md
+|   |   |   +--- Preview.tsx
+|   |   |   +--- WallpaperManager.tsx
+|   |   |   +--- Settings.tsx
+|   |   |   +--- Effects.tsx
+|   |   |   +--- About.tsx
+|   |   |   +--- Performance.tsx
+|   |   |   \--- Gallery.tsx
+|   |   +--- assets
+|   |   |   \--- react.svg
+|   |   +--- main.tsx
+|   |   +--- store.ts
+|   |   +--- vite-env.d.ts
+|   |   +--- ipc.ts
+|   |   +--- App.css
+|   |   +--- App.tsx
+|   |   \--- index.css
+|   +--- src-tauri
+|   |   +--- src
+|   |   |   +--- lib.rs
+|   |   |   +--- main.rs
+|   |   |   +--- depth.rs
+|   |   |   \--- ipc_client.rs
+|   |   +--- icons
+|   |   |   +--- Square30x30Logo.png
+|   |   |   +--- Square310x310Logo.png
+|   |   |   +--- Square150x150Logo.png
+|   |   |   +--- Square284x284Logo.png
+|   |   |   +--- Square89x89Logo.png
+|   |   |   +--- StoreLogo.png
+|   |   |   +--- Square44x44Logo.png
+|   |   |   +--- Square71x71Logo.png
+|   |   |   +--- 32x32.png
+|   |   |   +--- icon.icns
+|   |   |   +--- 128x128.png
+|   |   |   +--- 128x128@2x.png
+|   |   |   +--- Square107x107Logo.png
+|   |   |   +--- Square142x142Logo.png
+|   |   |   +--- icon.ico
+|   |   |   \--- icon.png
+|   |   +--- capabilities
+|   |   |   +--- desktop.json
+|   |   |   \--- default.json
+|   |   +--- gen
+|   |   |   \--- schemas
+|   |   |       +--- desktop-schema.json
+|   |   |       +--- windows-schema.json
+|   |   |       +--- acl-manifests.json
+|   |   |       \--- capabilities.json
+|   |   +--- Cargo.lock
+|   |   +--- Cargo.toml
+|   |   +--- tauri.conf.json
+|   |   +--- .gitignore
+|   |   +--- 2
+|   |   \--- build.rs
+|   +--- tsconfig.json
+|   +--- README.md
+|   +--- vite.config.ts
+|   +--- tsconfig.node.json
+|   +--- index.html
+|   +--- .gitignore
+|   +--- package.json
+|   \--- package-lock.json
++--- wallpapers
+|   +--- Witcher.jpg
+|   \--- frieren-magical.jpeg
++--- renderer
+|   +--- src
+|   |   +--- power
+|   |   |   +--- PowerManager.h
+|   |   |   \--- PowerManager.cpp
+|   |   +--- quality
+|   |   |   +--- QualityManager.h
+|   |   |   \--- QualityManager.cpp
+|   |   +--- plugins
+|   |   |   +--- SolidColorTest
+|   |   |   |   \--- SolidColorTest.cpp
+|   |   |   +--- interface
+|   |   |   |   \--- PluginAPI.h
+|   |   |   +--- _parked
+|   |   |   |   \--- window_wipe
+|   |   |   |       +--- Shaders
+|   |   |   |       |   +--- FullscreenVS.hlsl
+|   |   |   |       |   +--- RegrowthPS.hlsl
+|   |   |   |       |   +--- WipeBrushPS.hlsl
+|   |   |   |       |   +--- CompositePS.hlsl
+|   |   |   |       |   +--- DropletPS.hlsl
+|   |   |   |       |   \--- DropletVS.hlsl
+|   |   |   |       \--- WindowWipePlugin.cpp
+|   |   |   +--- stone_press_v2
+|   |   |   |   +--- Shaders
+|   |   |   |   |   +--- SP2_SimPS.hlsl
+|   |   |   |   |   +--- SP2_FullscreenVS.hlsl
+|   |   |   |   |   \--- SP2_CompositePS.hlsl
+|   |   |   |   \--- StonePressV2Plugin.cpp
+|   |   |   +--- gravity_lens_transparent
+|   |   |   |   +--- Shaders
+|   |   |   |   |   +--- SimPS.hlsl
+|   |   |   |   |   +--- FullscreenVS.hlsl
+|   |   |   |   |   \--- CompositePS.hlsl
+|   |   |   |   \--- GravityLensTransparentPlugin.cpp
+|   |   |   +--- cursor_reveal
+|   |   |   |   +--- Shaders
+|   |   |   |   |   +--- FadePS.hlsl
+|   |   |   |   |   +--- FullscreenVS.hlsl
+|   |   |   |   |   +--- BrushPS.hlsl
+|   |   |   |   |   \--- CompositePS.hlsl
+|   |   |   |   +--- WICLoader.h
+|   |   |   |   +--- WICLoader.cpp
+|   |   |   |   \--- CursorRevealPlugin.cpp
+|   |   |   +--- brick_outline
+|   |   |   |   +--- Shaders
+|   |   |   |   |   +--- BO_FullscreenVS.hlsl
+|   |   |   |   |   \--- BO_CompositePS.hlsl
+|   |   |   |   \--- BrickOutlinePlugin.cpp
+|   |   |   +--- gravity_lens
+|   |   |   |   +--- Shaders
+|   |   |   |   |   +--- SimPS.hlsl
+|   |   |   |   |   +--- FullscreenVS.hlsl
+|   |   |   |   |   \--- CompositePS.hlsl
+|   |   |   |   \--- GravityLensPlugin.cpp
+|   |   |   \--- depth_parallax
+|   |   |       +--- Shaders
+|   |   |       |   +--- FullscreenVS.hlsl
+|   |   |       |   \--- DepthParallaxPS.hlsl
+|   |   |       +--- DepthParallaxPlugin.h
+|   |   |       \--- DepthParallaxPlugin.cpp
+|   |   +--- core
+|   |   |   +--- PluginLoader.cpp
+|   |   |   +--- PluginLoader.h
+|   |   |   +--- main.cpp
+|   |   |   +--- BasePS.hlsl
+|   |   |   \--- BaseVS.hlsl
+|   |   \--- ipc
+|   |       +--- json.hpp
+|   |       +--- IPCServer.h
+|   |       \--- IPCServer.cpp
+|   +--- renderer_err.txt
+|   +--- renderer_out.txt
+|   +--- DumpWindows.cpp
+|   +--- client_test.js
+|   \--- CMakeLists.txt
++--- logos
+|   +--- Klaaav_logo.jpeg
+|   \--- Graffiti_logo.jpeg
++--- patch_sp2_smooth.py
++--- patch_ui_load.py
++--- patch_effects.js
++--- patch_sliders.py
++--- renderer_stdout.txt
++--- test_pipe_read.py
++--- test_png.py
++--- temp.py
++--- test_ipc.py
++--- get_status.py
++--- build_glt.bat
++--- build_sp2.bat
++--- .gitignore
++--- build.bat
++--- carbon_diffuse.jpg
++--- depth_model.onnx
++--- gallery-schema.md
++--- cmake_runs.txt
+\--- context.md
+

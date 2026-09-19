@@ -20,8 +20,16 @@ export async function setSettingStr(key: string, value: string) {
     return invoke("set_setting_str", { key, value });
 }
 
-export async function setQualityTier(tier: string) {
-    return invoke("set_quality_tier", { tier });
+export async function setFpsCap(fps: number) {
+    return invoke("set_fps_cap", { fps });
+}
+
+export async function setResolutionScale(scale: number) {
+    return invoke("set_resolution_scale", { scale });
+}
+
+export async function setQualityAuto() {
+    return invoke("set_quality_auto");
 }
 
 export async function getStatus(): Promise<any> {

@@ -20,6 +20,8 @@ struct StatusSnapshot {
     std::string state;
     std::string tier;
     std::string activePlugin;
+    int fpsCap;
+    float resolutionScale;
 };
 
 class IPCServer {
@@ -32,6 +34,7 @@ public:
     
     // Called by the main thread to keep the status fresh for 'get_status' requests
     static void UpdateStatus(const StatusSnapshot& status);
+    static void UpdateQualitySnapshot(int fpsCap, float resolutionScale);
     static float GetTimeSinceLastMessage();
 
 private:

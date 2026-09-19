@@ -124,11 +124,22 @@ pub fn set_setting_str(key: String, value: String) -> Result<(), String> {
 }
 
 #[command]
-pub fn set_quality_tier(tier: String) -> Result<(), String> {
-    let msg = json!({
-        "cmd": "set_quality_tier",
-        "tier": tier
-    });
+pub fn set_fps_cap(fps: i32) -> Result<(), String> {
+    let msg = json!({"cmd": "set_fps_cap", "fps": fps});
+    send_ipc_message(&msg)?;
+    Ok(())
+}
+
+#[command]
+pub fn set_resolution_scale(scale: f32) -> Result<(), String> {
+    let msg = json!({"cmd": "set_resolution_scale", "scale": scale});
+    send_ipc_message(&msg)?;
+    Ok(())
+}
+
+#[command]
+pub fn set_quality_auto() -> Result<(), String> {
+    let msg = json!({"cmd": "set_quality_auto"});
     send_ipc_message(&msg)?;
     Ok(())
 }

@@ -6,6 +6,12 @@
 class QualityManager {
 public:
     static void Initialize(uint64_t vramMB, const std::string& adapterName);
+    static void ApplyAutoDetected();
+    static void SetFpsCap(int fps);
+    static int GetFpsCap();
+    static void SetResolutionScale(float scale);
+    static float GetResolutionScale();
+
     static void SetQualityTierOverride(QualityTierLevel level);
     static const QualityTier* GetCurrentTier();
     static bool HasTierChanged();

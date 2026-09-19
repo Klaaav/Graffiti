@@ -32,6 +32,9 @@ static std::string g_lastLayerB = "";
 // Timer state
 auto     g_lastFrameTime = std::chrono::high_resolution_clock::now();
 uint64_t g_frameCount    = 0;
+static auto s_fpsWindowStart = std::chrono::steady_clock::now();
+static int s_framesInWindow = 0;
+static float s_measuredFps = 0.0f;
 
 // ---------------------------------------------------------------
 // Console
@@ -216,7 +219,6 @@ bool InitD3D(HWND hwnd, int width, int height) {
             std::cout << "Adapter: " << adapterName << "\n";
             std::cout << "Dedicated VRAM: " << vramMB << " MB\n";
             QualityManager::Initialize(vramMB, adapterName);
-            QualityManager::SetQualityTierOverride(QUALITY_TIER_HIGH); // Force maximum quality
         }
         dxgiAdapter->Release();
     }
@@ -402,6 +404,39 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
+void ComputeProcessingResolution(int screenWidth, int screenHeight, float scale, int& outWidth, int& outHeight) {
+    int sourceResWidth = 3840;
+    int sourceResHeight = 2160;
+    outWidth = std::min({ 2560, screenWidth, sourceResWidth });
+    outHeight = std::min({ 1440, screenHeight, sourceResHeight });
+    outWidth = static_cast<int>(outWidth * scale);
+    outHeight = static_cast<int>(outHeight * scale);
+}
+
+void ApplyResolutionScale(float scale) {
+    QualityManager::SetResolutionScale(scale);
+
+    int processingWidth, processingHeight;
+    ComputeProcessingResolution(g_pluginContext.screenWidth, g_pluginContext.screenHeight, scale, processingWidth, processingHeight);
+
+    g_pluginContext.processingWidth = processingWidth;
+    g_pluginContext.processingHeight = processingHeight;
+
+    std::cout << "[Quality] Resolution scale changed to " << scale
+              << " -> " << processingWidth << "x" << processingHeight << "\n";
+
+    IEffectPlugin* activePlugin = g_pluginLoader.GetActivePlugin();
+    if (activePlugin) {
+        if (activePlugin->Shutdown) activePlugin->Shutdown();
+        ResetGPUState();
+        if (activePlugin->Initialize) activePlugin->Initialize(&g_pluginContext);
+        if (activePlugin->OnWallpaperChanged && !g_lastLayerA.empty()) {
+            WallpaperLayers layers = { g_lastLayerA.c_str(), g_lastLayerB.c_str() };
+            activePlugin->OnWallpaperChanged(&layers);
+        }
+    }
+}
+
 // ---------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------
@@ -480,16 +515,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
     }
 
     // ---- Setup Plugin System ----
-    int sourceResWidth = 3840;
-    int sourceResHeight = 2160;
-    
-    int processingWidth = std::min({ 2560, screenWidth, sourceResWidth });
-    int processingHeight = std::min({ 1440, screenHeight, sourceResHeight });
-
-    if (QualityManager::GetCurrentTier()->level == QUALITY_TIER_LOW) {
-        processingWidth /= 2;
-        processingHeight /= 2;
-    }
+    int processingWidth, processingHeight;
+    ComputeProcessingResolution(screenWidth, screenHeight, QualityManager::GetResolutionScale(), processingWidth, processingHeight);
 
     std::cout << "Computed Core Processing Resolution: " << processingWidth << "x" << processingHeight << "\n";
 
@@ -538,7 +565,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
         if (!isRunning) break;
 
         // Evaluate render state once per loop
-        int fpsCap = QualityManager::GetCurrentTier()->fpsCap;
+        int fpsCap = QualityManager::GetFpsCap();
         bool shouldRender = PowerManager::ShouldRenderFrame(fpsCap);
         static bool wasRendering = true;
 
@@ -628,6 +655,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 if (cmd.strArg1 == "low") QualityManager::SetQualityTierOverride(QUALITY_TIER_LOW);
                 else if (cmd.strArg1 == "balanced") QualityManager::SetQualityTierOverride(QUALITY_TIER_BALANCED);
                 else if (cmd.strArg1 == "high") QualityManager::SetQualityTierOverride(QUALITY_TIER_HIGH);
+            } else if (cmd.cmd == "set_fps_cap") {
+                QualityManager::SetFpsCap((int)cmd.floatArg);
+                IPCServer::UpdateQualitySnapshot(QualityManager::GetFpsCap(), QualityManager::GetResolutionScale());
+            } else if (cmd.cmd == "set_resolution_scale") {
+                ApplyResolutionScale(cmd.floatArg);
+                IPCServer::UpdateQualitySnapshot(QualityManager::GetFpsCap(), QualityManager::GetResolutionScale());
+            } else if (cmd.cmd == "set_quality_auto") {
+                QualityManager::ApplyAutoDetected();
+                ApplyResolutionScale(QualityManager::GetResolutionScale()); // physically applies + reinits active plugin if needed
+                IPCServer::UpdateQualitySnapshot(QualityManager::GetFpsCap(), QualityManager::GetResolutionScale());
             } else if (cmd.cmd == "set_setting") {
                 if (cmd.strArg1 == "engine.idleTimeout") {
                     PowerManager::SetIdleTimeout(cmd.floatArg);
@@ -702,10 +739,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 Sleep(1);
             }
             
+            s_framesInWindow++;
+            float windowElapsed = std::chrono::duration<float>(std::chrono::steady_clock::now() - s_fpsWindowStart).count();
+            if (windowElapsed >= 1.0f) {
+                s_measuredFps = s_framesInWindow / windowElapsed;
+                s_framesInWindow = 0;
+                s_fpsWindowStart = std::chrono::steady_clock::now();
+            }
+            
             // Update IPC status periodically
             if (g_frameCount % 60 == 0) {
                 StatusSnapshot snap;
-                snap.fps = 60.0f; // Calculate real FPS later
+                snap.fps = s_measuredFps;
                 snap.cpu = 0.0f;
                 snap.gpuMemMB = 0.0f;
                 
@@ -713,6 +758,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 stateEnum = std::max(0, std::min(stateEnum, 7));
                 const char* states[] = {"VISIBLE_ACTIVE", "VISIBLE_IDLE_LOW_FPS", "IDLE_PAUSED", "HIDDEN_OCCLUDED", "HIDDEN_FULLSCREEN", "HIDDEN_BATTERY", "HIDDEN_SESSION_LOCKED", "HIDDEN_REMOTE_SESSION"};
                 snap.state = states[stateEnum];
+                snap.fpsCap = QualityManager::GetFpsCap();
+                snap.resolutionScale = QualityManager::GetResolutionScale();
                 
                 int tierEnum = QualityManager::GetCurrentTier()->level;
                 tierEnum = std::max(0, std::min(tierEnum, 2));
