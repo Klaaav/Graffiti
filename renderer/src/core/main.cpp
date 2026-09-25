@@ -268,7 +268,8 @@ void ResetGPUState() {
     if (!g_pd3dDeviceContext) return;
     
     // Unbind Render Targets
-    g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
+    ID3D11RenderTargetView* nullRTV[1] = {nullptr};
+    g_pd3dDeviceContext->OMSetRenderTargets(1, nullRTV, nullptr);
     
     // Unbind Shader Resources
     ID3D11ShaderResourceView* nullSRVs[8] = {nullptr};
@@ -441,6 +442,13 @@ void ApplyResolutionScale(float scale) {
 // Entry point
 // ---------------------------------------------------------------
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpCmdLine*/, int /*nCmdShow*/) {
+    // Ensure only one instance of GraffitiRenderer is running
+    HANDLE hMutex = CreateMutexA(nullptr, TRUE, "GraffitiRenderer_Mutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(hMutex);
+        return 0; // Exit silently if another instance is already running
+    }
+
     // Initialize COM for WIC
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 

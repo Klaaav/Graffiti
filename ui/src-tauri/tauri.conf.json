@@ -38,7 +38,8 @@
     ],
     "resources": {
       "../../renderer/build/Release/GraffitiRenderer.exe": "GraffitiRenderer.exe",
-      "../../renderer/build/Release/plugins": "plugins"
+      "../../renderer/build/Release/plugins": "plugins",
+      "../../depth_model.onnx": "depth_model.onnx"
     }
   }
 }

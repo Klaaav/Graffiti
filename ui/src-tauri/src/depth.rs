@@ -25,17 +25,14 @@ pub async fn generate_depth_map(source_path: String) -> Result<String, String> {
         return Err("Source file does not exist".to_string());
     }
 
-    // Resolve model path
+    // Resolve model path relative to the executable
     let exe_dir = std::env::current_exe()
         .map_err(|e| e.to_string())?
         .parent()
         .unwrap()
         .to_path_buf();
 
-    let mut model_path = PathBuf::from(r"C:\My_Proj\InteractWall\depth_model.onnx");
-    if !model_path.exists() {
-        model_path = exe_dir.join("depth_model.onnx");
-    }
+    let model_path = exe_dir.join("depth_model.onnx");
     if !model_path.exists() {
         return Err("ONNX model not found".to_string());
     }
