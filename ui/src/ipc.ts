@@ -67,3 +67,27 @@ export async function fileExists(path: string): Promise<boolean> {
 export async function clearWallpaper(): Promise<void> {
     return invoke('clear_wallpaper');
 }
+
+export async function startWebWallpaper(
+    model: string,
+    bgType: string,
+    bgColor?: string,
+    bgImage?: string,
+    rotationFactor?: number,
+    zoomFactor?: number,
+    offsetX?: number,
+    offsetY?: number,
+    enableVerticalRotation?: boolean,
+    initialRotationX?: number,
+    initialRotationY?: number
+): Promise<void> {
+    return invoke("start_web_wallpaper", { model, bgType, bgColor, bgImage, rotationFactor, zoomFactor, offsetX, offsetY, enableVerticalRotation, initialRotationX, initialRotationY });
+}
+
+export async function stopWebWallpaper(): Promise<void> {
+    return invoke("stop_web_wallpaper");
+}
+
+export async function importWebAsset(filePath: string): Promise<string> {
+    return invoke("import_web_asset", { filePath });
+}

@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { load } from '@tauri-apps/plugin-store';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { importWallpaper, saveBakedWallpaper, deleteBakedWallpaper, applyWallpaper, listWallpapers, removeEffect, clearWallpaper } from '../ipc';
+import { importWallpaper, saveBakedWallpaper, deleteBakedWallpaper, listWallpapers, clearWallpaper as ipcClearWallpaper } from '../ipc';
+import { applyWallpaper, removeEffect, stopWebWallpaperIfNeeded } from '../wallpaperManager';
 import { saveActiveSession } from '../store';
 import { Plus, X, Image as ImageIcon, Save, Upload, Check, Undo2, Redo2, FolderOpen, Trash2, Info } from 'lucide-react';
 
@@ -895,7 +896,8 @@ export default function Gallery() {
               </button>
               <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 5px' }}></div>
               <button className="danger" onClick={async () => {
-                await clearWallpaper();
+                await stopWebWallpaperIfNeeded();
+                await ipcClearWallpaper();
                 await saveActiveSession(null);
                 alert("Wallpaper stopped and reset.");
               }}>

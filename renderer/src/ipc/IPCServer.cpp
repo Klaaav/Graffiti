@@ -176,33 +176,21 @@ void IPCServer::ProcessClient(HANDLE hPipe) {
             msg.strArg1 = j.value("layerA", "");
             msg.strArg2 = j.value("layerB", "");
 
-            BOOL success = SystemParametersInfoA(
-                SPI_SETDESKWALLPAPER, 0, (void *)msg.strArg1.c_str(),
-                SPIF_SENDCHANGE);
-            std::string respStr =
-                success ? "{\"status\":\"ok\"}\n" : "{\"status\":\"error\"}\n";
+            // NOTE: Do NOT call SystemParametersInfoA(SPI_SETDESKWALLPAPER)
+            // here. Doing so on this background thread causes Explorer to
+            // rebuild the WorkerW hierarchy, which races with the main
+            // thread's window parenting and causes the "black screen" bug.
+            // The main thread handles wallpaper registry updates quietly
+            // via SPIF_UPDATEINIFILE (no broadcast) after loading the texture.
+            std::string respStr = "{\"status\":\"ok\"}\n";
             DWORD bytesWritten = 0;
             WriteFile(hPipe, respStr.c_str(), respStr.size(), &bytesWritten,
                       nullptr);
           } else if (cmd == "clear_wallpaper") {
-            wchar_t originalWallpaper[MAX_PATH] = {0};
-            BOOL success = FALSE;
-            HKEY hKey;
-            if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Control Panel\\Desktop", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-                DWORD cbData = sizeof(originalWallpaper);
-                if (RegQueryValueExW(hKey, L"Wallpaper", nullptr, nullptr, (LPBYTE)originalWallpaper, &cbData) == ERROR_SUCCESS) {
-                    success = SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, (void*)originalWallpaper, SPIF_SENDCHANGE);
-                }
-                RegCloseKey(hKey);
-            }
-            if (!success) {
-                success = SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_SENDCHANGE);
-            }
-            std::string respStr =
-                success ? "{\"status\":\"ok\"}\n" : "{\"status\":\"error\"}\n";
-            DWORD bytesWritten = 0;
-            WriteFile(hPipe, respStr.c_str(), respStr.size(), &bytesWritten,
-                      nullptr);
+            // Queued to the main thread — calling SystemParametersInfo here
+            // would race with Explorer's WorkerW rebuild (same bug as the
+            // old apply_wallpaper path). The main thread restores the saved
+            // original wallpaper after hiding the renderer window.
           } else if (cmd == "set_effect") {
             msg.strArg1 = j.value("plugin", "");
           } else if (cmd == "set_setting") {

@@ -52,6 +52,7 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
+                        let _ = ipc_client::stop_web_wallpaper();
                         ipc_client::send_quit_command();
                         app.exit(0);
                     }
@@ -105,6 +106,9 @@ pub fn run() {
             ipc_client::save_baked_wallpaper,
             ipc_client::delete_baked_wallpaper,
             ipc_client::clear_wallpaper,
+            ipc_client::start_web_wallpaper,
+            ipc_client::stop_web_wallpaper,
+            ipc_client::import_web_asset,
             depth::generate_depth_map,
             is_autostart,
             file_exists,

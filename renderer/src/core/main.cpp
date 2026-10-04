@@ -1,5 +1,6 @@
 #define NOMINMAX
 #include <windows.h>
+#pragma comment(lib, "winmm.lib")  // For timeBeginPeriod / timeEndPeriod
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <iostream>
@@ -23,11 +24,19 @@ ID3D11RenderTargetView*  g_mainRenderTargetView  = nullptr;
 HWND g_hwnd    = nullptr;
 HWND g_workerw = nullptr;
 
+// Flag: true once the active plugin has loaded its wallpaper texture.
+// Prevents showing the renderer window (opaque black) before content is ready.
+static bool g_hasWallpaperLoaded = false;
+
 PluginLoader g_pluginLoader;
 RendererContext g_pluginContext = {};
 
 static std::string g_lastLayerA = "";
 static std::string g_lastLayerB = "";
+
+// The user's desktop wallpaper path before Graffiti overwrites the registry.
+// Captured once on the first apply_wallpaper so we can restore it on exit or remove_effect.
+static std::string g_originalWallpaper = "";
 
 // Timer state
 auto     g_lastFrameTime = std::chrono::high_resolution_clock::now();
@@ -292,7 +301,7 @@ void ResetGPUState() {
 // ---------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------
-void Render() {
+void Render(int fpsCap) {
     if (!g_mainRenderTargetView) return;
 
     auto now = std::chrono::high_resolution_clock::now();
@@ -325,7 +334,9 @@ void Render() {
         Sleep(16); // Sleep to prevent 100% CPU core usage when no effect is running
         return; // Don't render anything if no plugin is active
     } else {
-        if (!IsWindowVisible(g_hwnd)) {
+        // Only show the window once the plugin has actually loaded its wallpaper
+        // texture. Showing before this would display an opaque black rectangle.
+        if (!IsWindowVisible(g_hwnd) && g_hasWallpaperLoaded) {
             ShowWindow(g_hwnd, SW_SHOW);
         }
     }
@@ -336,7 +347,13 @@ void Render() {
     if (plugin->Update) plugin->Update(deltaTime);
     if (plugin->Render) plugin->Render();
 
-    g_pSwapChain->Present(1, 0); // VSync on
+    // When a software FPS cap is active, ShouldRenderFrame() already controls
+    // timing. Using Present(1) here would add a SECOND ~16.67ms VBlank wait
+    // on top of the software timer, halving the effective FPS (60→30, 30→20).
+    // So: use Present(0) for capped modes, Present(1) only for uncapped (where
+    // VSync is the sole limiter and naturally caps to monitor refresh rate).
+    UINT syncInterval = (fpsCap > 0) ? 0 : 1;
+    g_pSwapChain->Present(syncInterval, 0);
 }
 
 // ---------------------------------------------------------------
@@ -452,6 +469,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
     // Initialize COM for WIC
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
 
+    // Set Windows timer resolution to 1ms for accurate Sleep() calls.
+    // Without this, Sleep(1) can sleep for up to 15.6ms (default granularity),
+    // causing software FPS caps to run at half their target rate.
+    timeBeginPeriod(1);
+
     // Make the application DPI aware so it gets true physical monitor resolution, not scaled resolution!
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
@@ -488,11 +510,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
     std::cout << "Screen: " << screenWidth << "x" << screenHeight << "\n";
 
     // ---- Create borderless popup window ----
+    // NOTE: Do NOT use WS_VISIBLE here. The window must start hidden and only
+    // become visible after a plugin has loaded its wallpaper texture
+    // (g_hasWallpaperLoaded). Creating it visible would flash a black rectangle.
     g_hwnd = CreateWindowEx(
         0,
         wc.lpszClassName,
         "GraffitiRenderer",
-        WS_POPUP | WS_VISIBLE,
+        WS_POPUP,
         0, 0, screenWidth, screenHeight,
         nullptr,    // NO parent during creation to avoid cross-thread ownership locking
         nullptr,
@@ -631,9 +656,36 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                         std::cout << "[main.cpp] -> Delegating to active plugin...\n";
                         WallpaperLayers layers = { g_lastLayerA.c_str(), g_lastLayerB.c_str() };
                         plugin->OnWallpaperChanged(&layers);
+                        g_hasWallpaperLoaded = true;
                     } else {
                         std::cout << "[main.cpp] -> FAILED: Active plugin missing OnWallpaperChanged.\n";
                     }
+                }
+
+                // Save the user's original wallpaper before we touch the registry.
+                // Only captured once — subsequent apply_wallpaper calls keep the
+                // very first original so we can always revert to it.
+                if (g_originalWallpaper.empty()) {
+                    char origWp[MAX_PATH] = {0};
+                    HKEY hKey;
+                    if (RegOpenKeyExA(HKEY_CURRENT_USER, "Control Panel\\Desktop", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+                        DWORD cbData = sizeof(origWp);
+                        RegQueryValueExA(hKey, "Wallpaper", nullptr, nullptr, (LPBYTE)origWp, &cbData);
+                        RegCloseKey(hKey);
+                    }
+                    g_originalWallpaper = origWp;
+                    std::cout << "[main.cpp] -> Saved original wallpaper: " << g_originalWallpaper << "\n";
+                }
+
+                // Quietly update the Windows registry wallpaper path so that
+                // the correct image shows after the effect is removed.
+                // SPIF_UPDATEINIFILE writes to the registry WITHOUT broadcasting
+                // WM_SETTINGCHANGE, so Explorer does NOT rebuild WorkerW.
+                if (!g_lastLayerA.empty()) {
+                    SystemParametersInfoA(
+                        SPI_SETDESKWALLPAPER, 0, (void*)g_lastLayerA.c_str(),
+                        SPIF_UPDATEINIFILE);
+                    std::cout << "[main.cpp] -> Registry wallpaper updated (no broadcast).\n";
                 }
             } else if (cmd.cmd == "set_effect") {
                 PowerManager::OnMouseMove();
@@ -652,11 +704,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                     if (newPlugin->OnWallpaperChanged && !g_lastLayerA.empty()) {
                         WallpaperLayers layers = { g_lastLayerA.c_str(), g_lastLayerB.c_str() };
                         newPlugin->OnWallpaperChanged(&layers);
+                        g_hasWallpaperLoaded = true;
                     }
                 } else if (newPlugin && newPlugin == oldPlugin) {
                     if (newPlugin->OnWallpaperChanged && !g_lastLayerA.empty()) {
                         WallpaperLayers layers = { g_lastLayerA.c_str(), g_lastLayerB.c_str() };
                         newPlugin->OnWallpaperChanged(&layers);
+                        g_hasWallpaperLoaded = true;
                     }
                 }
             } else if (cmd.cmd == "set_quality_tier") {
@@ -706,8 +760,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                         plugin->OnSettingChanged(cmd.strArg1.c_str(), cmd.floatArg);
                     }
                 }
-            } else if (cmd.cmd == "remove_effect") {
-                std::cout << "[main.cpp] Received remove_effect cmd.\n";
+            } else if (cmd.cmd == "remove_effect" || cmd.cmd == "clear_wallpaper") {
+                std::cout << "[main.cpp] Received " << cmd.cmd << " cmd.\n";
                 IEffectPlugin* oldPlugin = g_pluginLoader.GetActivePlugin();
                 if (oldPlugin) {
                     std::cout << "[main.cpp] -> Shutting down active plugin...\n";
@@ -719,14 +773,33 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 }
                 std::cout << "[main.cpp] -> Setting active plugin to none...\n";
                 g_pluginLoader.SetActivePlugin("");
-                
-                // Immediately hide the window. If the renderer is paused (e.g. idle timeout),
-                // ShouldRenderFrame() returns false, which skips Render(), meaning it would otherwise
-                // never hide the window. Doing it here guarantees it hides immediately.
+                g_hasWallpaperLoaded = false;
+
+                // Unparent the renderer window from WorkerW so it doesn't
+                // block other processes (web_wallpaper) from using WorkerW.
+                if (GetParent(g_hwnd) != nullptr) {
+                    LONG style = GetWindowLong(g_hwnd, GWL_STYLE);
+                    style &= ~WS_CHILD;
+                    style |= WS_POPUP;
+                    SetWindowLong(g_hwnd, GWL_STYLE, style);
+                    SetParent(g_hwnd, nullptr);
+                }
+
                 if (IsWindowVisible(g_hwnd)) {
                     ShowWindow(g_hwnd, SW_HIDE);
                 }
-                
+
+                // Restore the user's original desktop wallpaper.
+                // Use SPIF_UPDATEINIFILE (not SPIF_SENDCHANGE) to avoid
+                // broadcasting WM_SETTINGCHANGE which causes Explorer to
+                // rebuild WorkerW — racing with web_wallpaper attachment.
+                if (!g_originalWallpaper.empty()) {
+                    std::cout << "[main.cpp] -> Restoring original wallpaper: " << g_originalWallpaper << "\n";
+                    SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0,
+                        (void*)g_originalWallpaper.c_str(), SPIF_UPDATEINIFILE);
+                    g_originalWallpaper.clear();
+                }
+
                 std::cout << "[main.cpp] -> Active plugin is now: " << g_pluginLoader.GetActivePluginName() << "\n";
             } else if (cmd.cmd == "quit") {
                 std::cout << "[main] Received quit command. Exiting.\n";
@@ -737,7 +810,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
 
         if (shouldRender) {
             auto beforeRender = std::chrono::high_resolution_clock::now();
-            Render();
+            Render(fpsCap);
             auto afterRender = std::chrono::high_resolution_clock::now();
             float renderMs = std::chrono::duration<float, std::milli>(afterRender - beforeRender).count();
             
@@ -792,21 +865,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
     UnregisterClass(wc.lpszClassName, hInstance);
 
     std::cout << "GraffitiRenderer Exiting cleanly.\n";
-    
-    // Force Explorer to redraw the desktop wallpaper
-    char originalWallpaper[MAX_PATH] = {0};
-    BOOL success = FALSE;
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, "Control Panel\\Desktop", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        DWORD cbData = sizeof(originalWallpaper);
-        if (RegQueryValueExA(hKey, "Wallpaper", nullptr, nullptr, (LPBYTE)originalWallpaper, &cbData) == ERROR_SUCCESS) {
-            success = SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, (void*)originalWallpaper, SPIF_SENDCHANGE);
-        }
-        RegCloseKey(hKey);
+    timeEndPeriod(1);  // Restore default timer resolution
+
+    // Restore the user's original desktop wallpaper if we changed it.
+    if (!g_originalWallpaper.empty()) {
+        std::cout << "[Core] Restoring original wallpaper on exit: " << g_originalWallpaper << "\n";
+        SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0,
+            (void*)g_originalWallpaper.c_str(), SPIF_SENDCHANGE);
     }
-    if (!success) {
-        SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, nullptr, SPIF_SENDCHANGE);
-    }
-    
+
     return 0;
 }

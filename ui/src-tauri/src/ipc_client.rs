@@ -3,11 +3,14 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
+use std::sync::Mutex;
 use tauri::command;
 
 const PIPE_NAME: &str = r"\\.\pipe\Graffiti";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+static WEB_WALLPAPER_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 
 fn get_renderer_path() -> PathBuf {
     // Try relative to exe first (for packaged builds), then fall back to dev path
@@ -253,4 +256,171 @@ pub fn clear_wallpaper() -> Result<(), String> {
     let msg = json!({"cmd": "clear_wallpaper"});
     send_ipc_message(&msg)?;
     Ok(())
+}
+
+fn get_web_wallpaper_path() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        let relative = exe
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("web_wallpaper.exe");
+        if relative.exists() {
+            return relative;
+        }
+    }
+    PathBuf::from(r"C:\My_Proj\InteractWall\web_wallpaper\web_wallpaper.exe")
+}
+
+fn get_web_assets_dir() -> Result<PathBuf, String> {
+    let app_data = std::env::var("APPDATA").map_err(|_| "Could not find APPDATA".to_string())?;
+    let dir = PathBuf::from(app_data).join("Graffiti").join("web_assets");
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(dir)
+}
+
+fn copy_bundled_web_assets() -> Result<(), String> {
+    let assets_dir = get_web_assets_dir()?;
+
+    let bundled_dir = if let Ok(exe) = std::env::current_exe() {
+        exe.parent()
+            .unwrap_or(Path::new("."))
+            .join("web_assets")
+    } else {
+        PathBuf::from(r"C:\My_Proj\InteractWall\web_wallpaper\assets")
+    };
+
+    if !bundled_dir.exists() {
+        return Ok(());
+    }
+
+    for name in &["index.html", "three.module.js", "GLTFLoader.js", "BufferGeometryUtils.js"] {
+        let src = bundled_dir.join(name);
+        let dst = assets_dir.join(name);
+        if src.exists() {
+            fs::copy(&src, &dst).map_err(|e| format!("Failed to copy {}: {}", name, e))?;
+        }
+    }
+    Ok(())
+}
+
+#[command]
+pub fn start_web_wallpaper(
+    model: String,
+    bg_type: String,
+    bg_color: Option<String>,
+    bg_image: Option<String>,
+    rotation_factor: Option<f64>,
+    zoom_factor: Option<f64>,
+    offset_x: Option<f64>,
+    offset_y: Option<f64>,
+    enable_vertical_rotation: Option<bool>,
+    initial_rotation_x: Option<f64>,
+    initial_rotation_y: Option<f64>,
+) -> Result<(), String> {
+    // Hold the mutex for the entire lifecycle to prevent races from concurrent calls
+    let mut guard = WEB_WALLPAPER_PROCESS.lock().unwrap_or_else(|e| e.into_inner());
+
+    // Kill any existing web wallpaper process
+    if let Some(mut child) = guard.take() {
+        println!("[ipc_client.rs] Killing existing web_wallpaper.exe (PID {})", child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    // Stop the DirectX renderer's active effect to free WorkerW
+    if let Err(e) = send_ipc_message(&json!({"cmd": "remove_effect"})) {
+        println!("[ipc_client.rs] Warning: remove_effect failed: {}", e);
+    }
+
+    // Give the renderer time to process remove_effect and unparent from WorkerW
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    // Copy bundled web assets (index.html, three.js, etc.) to %APPDATA%\Graffiti\web_assets\
+    copy_bundled_web_assets()?;
+
+    // Write config file that web_wallpaper.exe reads on startup
+    let app_data = std::env::var("APPDATA").map_err(|_| "Could not find APPDATA".to_string())?;
+    let graffiti_dir = PathBuf::from(&app_data).join("Graffiti");
+    let config_path = graffiti_dir.join("web_config.json");
+    let tmp_config_path = graffiti_dir.join("web_config.json.tmp");
+
+    let model_filename = Path::new(&model)
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let bg_image_filename = bg_image.as_ref().map(|p| {
+        Path::new(p)
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default()
+    });
+
+    let config = json!({
+        "type": "config",
+        "model": model_filename,
+        "backgroundType": bg_type,
+        "backgroundColor": bg_color.unwrap_or_else(|| "#000000".to_string()),
+        "backgroundImage": bg_image_filename,
+        "rotationFactor": rotation_factor.unwrap_or(0.2),
+        "zoomFactor": zoom_factor.unwrap_or(1.0),
+        "offsetX": offset_x.unwrap_or(0.0),
+        "offsetY": offset_y.unwrap_or(0.0),
+        "enableVerticalRotation": enable_vertical_rotation.unwrap_or(true),
+        "initialRotationX": initial_rotation_x.unwrap_or(0.0),
+        "initialRotationY": initial_rotation_y.unwrap_or(0.0),
+    });
+
+    // Atomic write: write to temp file then rename to avoid torn reads
+    fs::write(&tmp_config_path, config.to_string()).map_err(|e| format!("Failed to write config: {}", e))?;
+    fs::rename(&tmp_config_path, &config_path).map_err(|e| format!("Failed to rename config: {}", e))?;
+
+    // Delete stale ready lock
+    let lock_path = PathBuf::from(&app_data).join("Graffiti").join("web_ready.lock");
+    let _ = fs::remove_file(&lock_path);
+
+    // Spawn web_wallpaper.exe with our PID so it self-terminates if the UI dies
+    let exe_path = get_web_wallpaper_path();
+    let pid = std::process::id().to_string();
+
+    let child = Command::new(&exe_path)
+        .arg(&pid)
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn web_wallpaper.exe at {:?}: {}", exe_path, e))?;
+
+    println!("[ipc_client.rs] Spawned web_wallpaper.exe (PID {})", child.id());
+    *guard = Some(child);
+
+    Ok(())
+}
+
+#[command]
+pub fn stop_web_wallpaper() -> Result<(), String> {
+    let mut guard = WEB_WALLPAPER_PROCESS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(mut child) = guard.take() {
+        println!("[ipc_client.rs] Killing web_wallpaper.exe (PID {})", child.id());
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Ok(())
+}
+
+#[command]
+pub fn import_web_asset(file_path: String) -> Result<String, String> {
+    let source = Path::new(&file_path);
+    if !source.exists() {
+        return Err("Source file does not exist".to_string());
+    }
+
+    let file_name = source.file_name().ok_or("Invalid file name")?;
+    let target_dir = get_web_assets_dir()?;
+    let target_path = target_dir.join(file_name);
+
+    fs::copy(source, &target_path).map_err(|e| e.to_string())?;
+    println!("[ipc_client.rs] Imported web asset to {:?}", target_path);
+
+    Ok(target_path.to_string_lossy().to_string())
 }

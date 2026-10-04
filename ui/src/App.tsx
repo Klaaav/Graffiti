@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Wand2, Settings as SettingsIcon, Info, Layers } from 'lucide-react';
+import { Wand2, Settings as SettingsIcon, Info, Layers, Box } from 'lucide-react';
 import './index.css';
 
 // Pages
@@ -8,8 +8,10 @@ import Settings from './pages/Settings';
 import { useEffect } from 'react';
 import About from './pages/About';
 import Gallery from './pages/Gallery';
+import WebWallpaper from './pages/WebWallpaper';
 import { loadSettings, applySettingsToBackend, getActiveSession, loadEffectSettings } from './store';
-import { applyWallpaper, setEffect, setSetting, isAutostart } from './ipc';
+import { setSetting, isAutostart } from './ipc';
+import { applyWallpaper, setEffect } from './wallpaperManager';
 
 function App() {
   useEffect(() => {
@@ -20,7 +22,7 @@ function App() {
       if (!isAuto) return; // User manually opened the UI; don't force auto-apply
       
       getActiveSession().then(async (session) => {
-          if (session) {
+          if (session && session.effect !== 'web-wallpaper') {
               await applyWallpaper(session.layerA, session.layerB);
               await setEffect(session.effect);
               const settings = await loadEffectSettings(session.effect);
@@ -52,6 +54,9 @@ function App() {
           <NavLink to="/effects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <Wand2 size={18} /> Effects
           </NavLink>
+          <NavLink to="/web-wallpaper" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Box size={18} /> 3D
+          </NavLink>
           <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <SettingsIcon size={18} /> Settings
           </NavLink>
@@ -67,6 +72,7 @@ function App() {
           <Route path="/" element={<Navigate to="/effects" replace />} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/effects" element={<Effects />} />
+          <Route path="/web-wallpaper" element={<WebWallpaper />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />
         </Routes>
