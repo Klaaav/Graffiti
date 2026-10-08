@@ -48,7 +48,7 @@ pub fn run() {
             let menu = tauri::menu::Menu::with_items(app, &[&show_i, &quit_i])?;
 
             let _tray = tauri::tray::TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tauri::include_image!("icons/32x32.png"))
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
@@ -80,6 +80,8 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
+                    // Set icon AFTER show() so the HWND is fully realized before WM_SETICON
+                    let _ = window.set_icon(tauri::include_image!("icons/128x128.png"));
                 }
             }
 

@@ -36,6 +36,14 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "icons/installer-header.bmp",
+        "sidebarImage": "icons/installer-sidebar.bmp",
+        "installMode": "currentUser"
+      }
+    },
     "resources": {
       "../../renderer/build/Release/GraffitiRenderer.exe": "GraffitiRenderer.exe",
       "../../renderer/build/Release/plugins": "plugins",

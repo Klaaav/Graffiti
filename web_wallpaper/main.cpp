@@ -249,6 +249,11 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     MultiByteToWideChar(CP_UTF8, 0, assetsPath.c_str(), -1, &wstr[0], wchars);
     static std::wstring s_assetsFolder = wstr.data();
 
+    // Consolidate Chromium child processes: run GPU compositor in-process
+    // and limit renderer processes to reduce Task Manager clutter
+    SetEnvironmentVariableA("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+        "--in-process-gpu --renderer-process-limit=1");
+
     HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), nullptr,
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
             [](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
@@ -282,6 +287,11 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                             style &= ~WS_POPUP;
                             style |= WS_CHILD;
                             SetWindowLongA(g_hWnd, GWL_STYLE, style);
+
+                            LONG exStyle = GetWindowLongA(g_hWnd, GWL_EXSTYLE);
+                            exStyle |= WS_EX_TRANSPARENT;
+                            SetWindowLongA(g_hWnd, GWL_EXSTYLE, exStyle);
+
                             SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
 
                             SetParent(g_hWnd, g_workerw);
@@ -384,6 +394,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     static PowerState lastState = POWER_STATE_VISIBLE_ACTIVE;
 
     switch (message) {
+    case WM_NCHITTEST:
+        return HTTRANSPARENT;
     case WM_TIMER:
         if (wParam == 1 && webview) {
             POINT pt;
@@ -437,6 +449,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         style &= ~WS_POPUP;
                         style |= WS_CHILD;
                         SetWindowLongA(g_hWnd, GWL_STYLE, style);
+
+                        LONG wdExStyle = GetWindowLongA(g_hWnd, GWL_EXSTYLE);
+                        wdExStyle |= WS_EX_TRANSPARENT;
+                        SetWindowLongA(g_hWnd, GWL_EXSTYLE, wdExStyle);
+
                         SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
 
                         SetParent(g_hWnd, newWorkerW);

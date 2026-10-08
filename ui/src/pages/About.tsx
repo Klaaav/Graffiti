@@ -2,39 +2,48 @@ import { Code, Globe, HeartHandshake } from 'lucide-react';
 
 export default function About() {
   return (
-    <div style={{maxWidth: '600px', margin: '0 auto', textAlign: 'center', paddingTop: '2rem'}}>
-      <div style={{marginBottom: '3rem'}}>
-        <div style={{display: 'flex', justifyContent: 'center', marginBottom: '1rem'}}>
-          <img src="/logos/Klaaav_logo.jpeg" alt="Klaaav" style={{ height: '32px', width: '32px', objectFit: 'contain', borderRadius: '4px' }} />
-        </div>
-        <h1 style={{fontSize: '3rem', margin: '0 0 0.5rem 0', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem'}}>
-          <span className="brand-text">Graffiti</span>
-        </h1>
-        <div style={{ color: 'var(--text-secondary)', marginBottom: '1rem', fontSize: '1.1rem' }}>
+    <div style={{ maxWidth: '480px', margin: '0 auto', paddingTop: '48px' }}>
+      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        <img
+          src="/logos/Graffiti_New_Logo_Transparent.png"
+          alt="Graffiti"
+          style={{ height: 'auto', width: '200px', objectFit: 'contain', marginBottom: '16px', filter: 'drop-shadow(0 2px 12px rgba(212,165,116,0.2))' }}
+        />
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0 0 12px 0' }}>
           A Klaaav product
-        </div>
-        <div style={{display: 'inline-block', padding: '0.25rem 1rem', background: 'rgba(0, 240, 255, 0.1)', color: 'var(--accent)', borderRadius: '20px', fontWeight: 600, fontSize: '0.9rem', border: '1px solid rgba(0, 240, 255, 0.2)'}}>
-          Version 1.0.0
-        </div>
+        </p>
+        <span style={{
+          display: 'inline-block',
+          padding: '3px 12px',
+          background: 'var(--accent-muted)',
+          color: 'var(--accent)',
+          borderRadius: '4px',
+          fontWeight: 600,
+          fontSize: '0.7rem',
+          letterSpacing: '0.04em',
+        }}>
+          v1.0.0
+        </span>
       </div>
 
-      <div className="card" style={{textAlign: 'left', marginBottom: '2rem'}}>
-        <h3 style={{marginTop: 0, marginBottom: '1rem', color: 'white'}}>Our Philosophy</h3>
-        <p style={{color: 'var(--text-secondary)', fontSize: '1.05rem', lineHeight: 1.6, margin: 0}}>
-          <strong style={{color: 'var(--accent)'}}>Privacy first. Everything local.</strong><br/><br/>
-          We believe your desktop is your personal space. Graffiti is built from the ground up to be a completely offline, high-performance engine. There are no accounts, no bundled telemetry, and no data leaving your machine. 
+      <div className="card" style={{ marginBottom: '24px' }}>
+        <div className="section-label">Philosophy</div>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6, margin: '8px 0 0 0' }}>
+          <strong style={{ color: 'var(--accent)' }}>Privacy first. Everything local.</strong>
+          <br /><br />
+          Your desktop is your personal space. Graffiti is built from the ground up as a completely offline, high-performance engine. No accounts, no telemetry, no data leaving your machine.
         </p>
       </div>
 
-      <div style={{display: 'flex', gap: '1rem', justifyContent: 'center'}}>
-        <button className="secondary" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-          <Globe size={18} /> Website
+      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+        <button className="secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
+          <Globe size={16} /> Website
         </button>
-        <button className="secondary" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-          <Code size={18} /> Source Code
+        <button className="secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
+          <Code size={16} /> Source
         </button>
-        <button className="secondary" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
-          <HeartHandshake size={18} /> Support Us
+        <button className="secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem' }}>
+          <HeartHandshake size={16} /> Support
         </button>
       </div>
     </div>

@@ -1,11 +1,10 @@
 import { BrowserRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
-import { Wand2, Settings as SettingsIcon, Info, Layers, Box } from 'lucide-react';
+import { Sparkles, SlidersHorizontal, Gem, Images, Box } from 'lucide-react';
 import './index.css';
 
-// Pages
 import Effects from './pages/Effects';
 import Settings from './pages/Settings';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import About from './pages/About';
 import Gallery from './pages/Gallery';
 import WebWallpaper from './pages/WebWallpaper';
@@ -14,60 +13,94 @@ import { setSetting, isAutostart } from './ipc';
 import { applyWallpaper, setEffect } from './wallpaperManager';
 
 function App() {
+  const [showSplash, setShowSplash] = useState(false);
+  const [splashExiting, setSplashExiting] = useState(false);
+
   useEffect(() => {
     loadSettings().then(applySettingsToBackend).catch(console.error);
-    
-    // Auto-restore last active wallpaper and its settings ONLY if launched via autostart (system boot)
+
     isAutostart().then((isAuto) => {
-      if (!isAuto) return; // User manually opened the UI; don't force auto-apply
-      
-      getActiveSession().then(async (session) => {
+      if (!isAuto) {
+        // Fresh launch — show welcome screen
+        setShowSplash(true);
+        setTimeout(() => setSplashExiting(true), 2100);
+        setTimeout(() => setShowSplash(false), 2900);
+      } else {
+        // Autostart (tray launch) — restore last session silently
+        getActiveSession().then(async (session) => {
           if (session && session.effect !== 'web-wallpaper') {
-              await applyWallpaper(session.layerA, session.layerB);
-              await setEffect(session.effect);
-              const settings = await loadEffectSettings(session.effect);
-              if (settings) {
-                // Short delay to ensure plugin is initialized before accepting settings
-                setTimeout(async () => {
-                    for (const [k, v] of Object.entries(settings)) {
-                        await setSetting(k, v);
-                    }
-                }, 100);
+            await applyWallpaper(session.layerA, session.layerB);
+            await setEffect(session.effect);
+            const settings = await loadEffectSettings(session.effect);
+            if (settings) {
+              setTimeout(async () => {
+                for (const [k, v] of Object.entries(settings)) {
+                  await setSetting(k, v);
+                }
+              }, 100);
             }
-        }
-    }).catch(console.error);
+          }
+        }).catch(console.error);
+      }
+    }).catch(() => {
+      // If isAutostart call fails, show splash as if fresh launch
+      setShowSplash(true);
+      setTimeout(() => setSplashExiting(true), 2100);
+      setTimeout(() => setShowSplash(false), 2900);
     });
   }, []);
+
   return (
     <Router>
-      <div className="top-bar">
-        <h1 className="brand" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="/logos/Klaaav_logo.jpeg" alt="Klaaav" style={{ height: '20px', width: '20px', objectFit: 'contain', borderRadius: '4px' }} />
-          <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--border-color)' }}></div>
-          <img src="/logos/Graffiti_logo.jpeg" alt="Graffiti Logo" style={{ height: '24px', width: '24px', objectFit: 'contain', borderRadius: '4px' }} />
-          <span className="brand-text">Graffiti</span>
-        </h1>
-        <div className="nav-capsule">
-          <NavLink to="/gallery" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Layers size={18} /> Gallery
-          </NavLink>
+      {showSplash && (
+        <div className={`splash-overlay${splashExiting ? ' exiting' : ''}`}>
+          <img
+            src="/logos/Graffiti_New_Logo_Transparent.png"
+            alt="Graffiti"
+            className="splash-logo"
+          />
+          <div className="splash-amber-bar" />
+          <span className="splash-tagline">Desktop Wallpaper Effects</span>
+        </div>
+      )}
+
+      <nav className="sidebar">
+        <div className="sidebar-brand-area">
+          <img
+            src="/logos/Graffiti_New_Logo_Transparent.png"
+            alt="Graffiti"
+            className="sidebar-brand"
+          />
+        </div>
+
+        <div className="sidebar-nav">
           <NavLink to="/effects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Wand2 size={18} /> Effects
+            <Sparkles />
+            <span className="nav-label">Effects</span>
+          </NavLink>
+          <NavLink to="/gallery" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
+            <Images />
+            <span className="nav-label">Gallery</span>
           </NavLink>
           <NavLink to="/web-wallpaper" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Box size={18} /> 3D
+            <Box />
+            <span className="nav-label">3D Web Wallpaper</span>
           </NavLink>
+          <div className="sidebar-nav-divider" />
           <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <SettingsIcon size={18} /> Settings
+            <SlidersHorizontal />
+            <span className="nav-label">Settings</span>
           </NavLink>
           <NavLink to="/about" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
-            <Info size={18} /> About
+            <Gem />
+            <span className="nav-label">About</span>
           </NavLink>
         </div>
-        <div style={{width: '150px'}}></div> {/* Spacer for centering capsule */}
-      </div>
-      
-      <div className="content">
+
+        <span className="sidebar-version">v1.0.0</span>
+      </nav>
+
+      <main className="content">
         <Routes>
           <Route path="/" element={<Navigate to="/effects" replace />} />
           <Route path="/gallery" element={<Gallery />} />
@@ -76,7 +109,7 @@ function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />
         </Routes>
-      </div>
+      </main>
     </Router>
   );
 }

@@ -193,3 +193,14 @@ export async function saveActiveSession(session: ActiveSession | null) {
     await store.set('activeSession', session);
     await store.save();
 }
+
+export async function saveSelectedEffect(effectId: string) {
+    const store = await getStore();
+    await store.set('lastSelectedEffect', effectId);
+    await store.save();
+}
+
+export async function loadSelectedEffect(): Promise<string | null> {
+    const store = await getStore();
+    return await store.get<string>('lastSelectedEffect') || null;
+}

@@ -23,6 +23,7 @@ ID3D11RenderTargetView*  g_mainRenderTargetView  = nullptr;
 
 HWND g_hwnd    = nullptr;
 HWND g_workerw = nullptr;
+HWND g_iconsParent = nullptr;
 
 // Flag: true once the active plugin has loaded its wallpaper texture.
 // Prevents showing the renderer window (opaque black) before content is ready.
@@ -71,6 +72,7 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
     HWND defView = FindWindowEx(hwnd, nullptr, "SHELLDLL_DefView", nullptr);
     if (defView != nullptr) {
         std::cout << "Found SHELLDLL_DefView inside HWND: 0x" << std::hex << reinterpret_cast<uintptr_t>(hwnd) << std::dec << "\n";
+        g_iconsParent = hwnd;
         WorkerWSearch* search = reinterpret_cast<WorkerWSearch*>(lParam);
         // The WorkerW we want is the NEXT sibling after hwnd, not a child.
         search->result = FindWindowEx(nullptr, hwnd, "WorkerW", nullptr);
@@ -253,7 +255,6 @@ bool InitD3D(HWND hwnd, int width, int height) {
 
     hr = dxgiFactory->CreateSwapChainForHwnd(g_pd3dDevice, hwnd, &sd, nullptr, nullptr, &g_pSwapChain);
 
-    // Prevent DXGI from handling Alt+Enter (would conflict with WorkerW parent).
     dxgiFactory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
     dxgiFactory->Release();
 
@@ -334,10 +335,13 @@ void Render(int fpsCap) {
         Sleep(16); // Sleep to prevent 100% CPU core usage when no effect is running
         return; // Don't render anything if no plugin is active
     } else {
-        // Only show the window once the plugin has actually loaded its wallpaper
-        // texture. Showing before this would display an opaque black rectangle.
         if (!IsWindowVisible(g_hwnd) && g_hasWallpaperLoaded) {
-            ShowWindow(g_hwnd, SW_SHOW);
+            ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
+            // Position renderer just behind the icons window so icons stay visible
+            if (g_iconsParent) {
+                SetWindowPos(g_hwnd, g_iconsParent, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
         }
     }
 
@@ -366,12 +370,22 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_TIMER:
         if (wParam == 2) {
             PowerManager::Update();
+            // Maintain z-order: keep renderer just behind icons parent
+            if (g_iconsParent && IsWindowVisible(g_hwnd)) {
+                HWND above = GetWindow(g_hwnd, GW_HWNDPREV);
+                if (above != g_iconsParent) {
+                    SetWindowPos(g_hwnd, g_iconsParent, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+            }
         }
         return 0;
 
     case WM_SIZE:
         // Guard both device AND swap chain (resize can arrive before InitD3D completes).
         if (g_pd3dDevice && g_pSwapChain && wParam != SIZE_MINIMIZED) {
+            // Unbind RTV from context — FLIP model ResizeBuffers fails with outstanding refs
+            g_pd3dDeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
             CleanupRenderTarget();
             g_pSwapChain->ResizeBuffers(
                 0,
@@ -402,6 +416,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             if (newWorkerW) {
                 SetParent(g_hwnd, newWorkerW);
                 g_workerw = newWorkerW;
+                if (g_iconsParent && IsWindowVisible(g_hwnd)) {
+                    SetWindowPos(g_hwnd, g_iconsParent, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
                 std::cout << "[Core] Re-parented to WorkerW: 0x" << std::hex
                           << reinterpret_cast<uintptr_t>(newWorkerW) << std::dec << "\n";
                 // Force a resize/repaint to ensure DXGI surface is valid again
@@ -533,7 +551,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
     }
 
     SetParent(g_hwnd, workerW);
+    g_workerw = workerW;
+
     std::cout << "Renderer HWND: 0x" << std::hex << reinterpret_cast<uintptr_t>(g_hwnd) << std::dec << "\n";
+    std::cout << "Icons parent HWND: 0x" << std::hex << reinterpret_cast<uintptr_t>(g_iconsParent) << std::dec << "\n";
 
     // Register for session lock/unlock notifications
     WTSRegisterSessionNotification(g_hwnd, NOTIFY_FOR_THIS_SESSION);
@@ -778,10 +799,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 // Unparent the renderer window from WorkerW so it doesn't
                 // block other processes (web_wallpaper) from using WorkerW.
                 if (GetParent(g_hwnd) != nullptr) {
-                    LONG style = GetWindowLong(g_hwnd, GWL_STYLE);
-                    style &= ~WS_CHILD;
-                    style |= WS_POPUP;
-                    SetWindowLong(g_hwnd, GWL_STYLE, style);
                     SetParent(g_hwnd, nullptr);
                 }
 

@@ -134,6 +134,16 @@ bool PowerManager::IsForegroundFullscreen() {
     GetClassNameA(fg, className, sizeof(className));
     if (strcmp(className, "WorkerW") == 0 || strcmp(className, "Progman") == 0) return false;
 
+    LONG exStyle = GetWindowLong(fg, GWL_EXSTYLE);
+    if (exStyle & WS_EX_TOOLWINDOW) return false;
+    if (exStyle & WS_EX_LAYERED) {
+        BYTE alpha;
+        DWORD flags;
+        if (GetLayeredWindowAttributes(fg, nullptr, &alpha, &flags)) {
+            if ((flags & LWA_ALPHA) && alpha < 255) return false;
+        }
+    }
+
     HMONITOR hMonitor = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi = { sizeof(mi) };
     if (GetMonitorInfo(hMonitor, &mi)) {

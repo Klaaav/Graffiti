@@ -5,7 +5,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { importWallpaper, saveBakedWallpaper, deleteBakedWallpaper, listWallpapers, clearWallpaper as ipcClearWallpaper } from '../ipc';
 import { applyWallpaper, removeEffect, stopWebWallpaperIfNeeded } from '../wallpaperManager';
 import { saveActiveSession } from '../store';
-import { Plus, X, Image as ImageIcon, Save, Upload, Check, Undo2, Redo2, FolderOpen, Trash2, Info } from 'lucide-react';
+import { Plus, X, Image as ImageIcon, Save, Upload, Check, Undo2, Redo2, FolderOpen, Trash2, Info, Square } from 'lucide-react';
 
 interface Transform {
   panX: number;
@@ -866,69 +866,68 @@ export default function Gallery() {
         <div className="gallery-action-bar">
           {editorState === 'DRAWING' ? (
             <>
-              <span style={{ color: 'white', padding: '0 10px', display: 'flex', alignItems: 'center' }}>Click to add vertices. Connect to start to finish.</span>
-              <button className="danger" onClick={cancelDrawing} style={{ padding: '4px 10px' }}><X size={16} /></button>
+              <span style={{ color: 'var(--text-secondary)', padding: '0 10px', display: 'flex', alignItems: 'center', fontSize: '0.75rem' }}>Click to add vertices. Connect to start to finish.</span>
+              <button className="danger" onClick={cancelDrawing} style={{ padding: '5px 10px' }}><X size={14} /></button>
             </>
           ) : (
             <>
-              <button className="secondary" onClick={handleUndo} title="Undo (Ctrl+Z)">
-                <Undo2 size={16} />
+              <button className="ghost" onClick={handleUndo} title="Undo (Ctrl+Z)">
+                <Undo2 size={14} />
               </button>
-              <button className="secondary" onClick={handleRedo} title="Redo (Ctrl+Y)">
-                <Redo2 size={16} />
+              <button className="ghost" onClick={handleRedo} title="Redo (Ctrl+Y)">
+                <Redo2 size={14} />
               </button>
-              <button className="danger" onClick={handleClearAll} title="Clear All Canvas">
-                <Trash2 size={16} />
+              <button className="ghost" onClick={handleClearAll} title="Clear All" style={{ color: 'var(--danger)' }}>
+                <Trash2 size={14} />
               </button>
-              <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 5px' }}></div>
-              <button className="primary" onClick={handleActivate}>
-                <Check size={16} /> Activate
+              <div className="gallery-divider"></div>
+              <button className="primary" onClick={handleActivate} style={{ padding: '6px 14px' }}>
+                <Check size={14} /> Activate
               </button>
-              <button className="secondary" onClick={handleSaveBake}>
-                <Save size={16} /> Save
+              <button className="ghost" onClick={handleSaveBake}>
+                <Save size={14} /> Save
               </button>
-              <button className="secondary" onClick={startDrawing}>
-                <Plus size={16} /> Add Shape
+              <button className="ghost" onClick={startDrawing}>
+                <Plus size={14} /> Shape
               </button>
-              <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 5px' }}></div>
-              <button className="secondary" onClick={() => setShowWallpapersModal(true)}>
-                <FolderOpen size={16} /> My Wallpapers
+              <div className="gallery-divider"></div>
+              <button className="ghost" onClick={() => setShowWallpapersModal(true)}>
+                <FolderOpen size={14} />
               </button>
-              <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 5px' }}></div>
-              <button className="danger" onClick={async () => {
+              <button className="ghost" onClick={async () => {
                 await stopWebWallpaperIfNeeded();
                 await ipcClearWallpaper();
                 await saveActiveSession(null);
                 alert("Wallpaper stopped and reset.");
-              }}>
-                Stop Wallpaper
+              }} style={{ color: 'var(--danger)' }}>
+                <Square size={14} /> Stop
               </button>
             </>
           )}
         </div>
         {isGeneratingDepth && (
           <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+            position: 'absolute', inset: 0,
             background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100,
-            flexDirection: 'column', gap: '1rem', backdropFilter: 'blur(4px)', borderRadius: '8px'
+            flexDirection: 'column', gap: '12px'
           }}>
             <div className="spinner"></div>
-            <div style={{ color: 'var(--text-secondary)' }}>Baking Wallpaper...</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Baking Wallpaper...</div>
           </div>
         )}
       </div>
       <div className="gallery-inspector">
-        <div className="card" style={{ flexShrink: 0 }}>
+        <div className="card">
           <h2>Background</h2>
-          <div className="control-group">
-            <label>Type</label>
-            <select
-              value={project.background.type}
-              onChange={e => setProject(p => { const next = { ...p, background: { ...p.background, type: e.target.value as 'color' | 'image' } }; commitHistory(next); return next; })}
-            >
-              <option value="color">Solid Color</option>
-              <option value="image">Image</option>
-            </select>
+          <div className="chip-group" style={{ marginBottom: '10px' }}>
+            <button
+              className={project.background.type === 'color' ? 'active' : ''}
+              onClick={() => setProject(p => { const next = { ...p, background: { ...p.background, type: 'color' as const } }; commitHistory(next); return next; })}
+            >Color</button>
+            <button
+              className={project.background.type === 'image' ? 'active' : ''}
+              onClick={() => setProject(p => { const next = { ...p, background: { ...p.background, type: 'image' as const } }; commitHistory(next); return next; })}
+            >Image</button>
           </div>
 
           {project.background.type === 'color' ? (
@@ -938,16 +937,16 @@ export default function Gallery() {
                 type="color"
                 value={project.background.value}
                 onChange={e => setProject(p => { const next = { ...p, background: { ...p.background, value: e.target.value } }; commitHistory(next); return next; })}
-                style={{ width: '100%', height: '40px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
+                style={{ width: '100%', height: '32px', background: 'transparent', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer' }}
               />
             </div>
           ) : (
             <>
-              <button className="secondary" onClick={handleImportBackground} style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '15px' }}>
-                <Upload size={18} /> Import Background Image
+              <button className="secondary" onClick={handleImportBackground} style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '6px', fontSize: '0.75rem', padding: '7px', marginBottom: '10px' }}>
+                <Upload size={14} /> Import Image
               </button>
               <div className="control-group">
-                <label>Fit Mode</label>
+                <label>Fit</label>
                 <select
                   value={project.background.fit}
                   onChange={e => setProject(p => { const next = { ...p, background: { ...p.background, fit: e.target.value as Background['fit'] } }; commitHistory(next); return next; })}
@@ -962,30 +961,20 @@ export default function Gallery() {
           )}
         </div>
 
-        <div className="card" style={{ flexShrink: 0 }}>
-          <h2>Shapes List</h2>
+        <div className="card">
+          <h2>Shapes</h2>
           {project.shapes.length === 0 ? (
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>No shapes added yet.</p>
+            <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', margin: 0 }}>No shapes yet</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {project.shapes.map((shape, index) => (
                 <div
                   key={shape.id}
+                  className={`gallery-shape-item ${selectedShapeId === shape.id ? 'selected' : ''}`}
                   onClick={() => setSelectedShapeId(shape.id)}
-                  style={{
-                    padding: '8px 12px',
-                    backgroundColor: selectedShapeId === shape.id ? 'var(--accent)' : 'rgba(255, 255, 255, 0.05)',
-                    color: selectedShapeId === shape.id ? '#000' : 'white',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontWeight: selectedShapeId === shape.id ? 'bold' : 'normal'
-                  }}
                 >
                   <span>Shape {index + 1}</span>
-                  {selectedShapeId === shape.id && <Check size={16} />}
+                  {selectedShapeId === shape.id && <Check size={14} />}
                 </div>
               ))}
             </div>
@@ -993,22 +982,23 @@ export default function Gallery() {
         </div>
 
         {selectedShape ? (
-          <div className="card" style={{ flexShrink: 0 }}>
+          <div className="card animate-fade-in">
             <h2 style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              Shape Details
-              <button className="danger" onClick={() => deleteShape(selectedShape.id)} style={{ padding: '4px 8px', fontSize: '0.8rem' }}>Delete</button>
+              Details
+              <button className="ghost" onClick={() => deleteShape(selectedShape.id)} style={{ padding: '2px 6px', color: 'var(--danger)' }}>
+                <Trash2 size={14} />
+              </button>
             </h2>
 
-            <button className="secondary" onClick={() => handleImportImageForShape(selectedShape.id)} style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '8px', margin: '15px 0' }}>
-              <ImageIcon size={18} /> {selectedShape.imagePath ? 'Change Image' : 'Import Image'}
+            <button className="secondary" onClick={() => handleImportImageForShape(selectedShape.id)} style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: '6px', fontSize: '0.75rem', padding: '7px', marginBottom: '10px' }}>
+              <ImageIcon size={14} /> {selectedShape.imagePath ? 'Change Image' : 'Import Image'}
             </button>
 
             {selectedShape.imagePath && (
               <>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '20px' }}>
-                  Tip: Drag the shape in the canvas to pan the image. Use mouse wheel to zoom.
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)', margin: '0 0 10px 0', lineHeight: 1.4 }}>
+                  Drag shape to pan. Scroll to zoom.
                 </p>
-
                 <div className="control-group">
                   <label>Zoom ({selectedShape.transform.zoom.toFixed(2)}x)</label>
                   <input
@@ -1017,7 +1007,6 @@ export default function Gallery() {
                     onChange={e => updateShapeTransform(selectedShape.id, { zoom: parseFloat(e.target.value) })}
                   />
                 </div>
-
                 <div className="control-group">
                   <label>Rotation ({(selectedShape.transform.rotate * (180 / Math.PI)).toFixed(0)}°)</label>
                   <input
@@ -1030,38 +1019,33 @@ export default function Gallery() {
             )}
           </div>
         ) : (
-          <div className="card" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', textAlign: 'center', minHeight: '100px' }}>
-            Select a shape on the canvas or from the list to edit its properties.
+          <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', textAlign: 'center', minHeight: '80px', fontSize: '0.75rem' }}>
+            Select a shape to edit
           </div>
         )}
       </div>
 
       {showWallpapersModal && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          zIndex: 100
-        }}>
-          <div className="card" style={{ width: '80%', height: '80%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <h2 style={{margin: 0}}>My Baked Wallpapers</h2>
-                <div title="%APPDATA%\Graffiti\baked_wallpapers" style={{cursor: 'help', display: 'flex', color: 'var(--text-secondary)'}}>
-                  <Info size={16} />
+        <div className="modal-overlay" onClick={() => setShowWallpapersModal(false)}>
+          <div className="card" onClick={e => e.stopPropagation()} style={{ width: '80%', maxHeight: '80%', display: 'flex', flexDirection: 'column', padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: '1rem' }}>My Baked Wallpapers</h2>
+                <div title="%APPDATA%\Graffiti\baked_wallpapers" style={{ cursor: 'help', display: 'flex', color: 'var(--text-tertiary)' }}>
+                  <Info size={14} />
                 </div>
               </div>
-              <button className="secondary" onClick={() => setShowWallpapersModal(false)}><X size={20} /></button>
+              <button className="ghost" onClick={() => setShowWallpapersModal(false)}><X size={18} /></button>
             </div>
             <div className="thumbnail-grid" style={{ overflowY: 'auto', flex: 1 }}>
               {savedWallpapers.length === 0 ? (
-                <p style={{ color: 'rgba(255,255,255,0.5)', gridColumn: '1 / -1', textAlign: 'center', marginTop: '2rem' }}>No baked wallpapers found.</p>
+                <p style={{ color: 'var(--text-tertiary)', gridColumn: '1 / -1', textAlign: 'center', marginTop: '2rem', fontSize: '0.8rem' }}>No baked wallpapers found.</p>
               ) : (
                 savedWallpapers.map((path, idx) => (
                   <div key={idx} className="wallpaper-card" style={{ position: 'relative' }}>
                     <img src={convertFileSrc(path)} alt={`Wallpaper ${idx}`} />
 
-                    <button className="secondary" style={{ position: 'absolute', top: '8px', right: '8px', padding: '6px', background: 'rgba(0,0,0,0.6)', border: 'none', borderRadius: '4px' }}
+                    <button className="ghost" style={{ position: 'absolute', top: '4px', right: '4px', padding: '4px', background: 'rgba(0,0,0,0.5)', borderRadius: '4px' }}
                       onClick={async () => {
                         if (confirm("Are you sure you want to delete this wallpaper?")) {
                           try {
@@ -1075,10 +1059,10 @@ export default function Gallery() {
                         }
                       }}
                     >
-                      <Trash2 size={16} color="white" />
+                      <Trash2 size={14} color="white" />
                     </button>
 
-                    <button className="primary" style={{ width: '100%', padding: '8px', marginTop: '8px' }} onClick={async () => {
+                    <button className="primary" style={{ width: '100%', padding: '6px', fontSize: '0.75rem' }} onClick={async () => {
                       try {
                         await saveActiveSession({ layerA: path, layerB: "", effect: "none", isGalleryCollage: true });
                         await removeEffect();
