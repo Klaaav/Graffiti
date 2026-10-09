@@ -24,6 +24,7 @@ ID3D11RenderTargetView*  g_mainRenderTargetView  = nullptr;
 HWND g_hwnd    = nullptr;
 HWND g_workerw = nullptr;
 HWND g_iconsParent = nullptr;
+HWND g_defView = nullptr;
 
 // Flag: true once the active plugin has loaded its wallpaper texture.
 // Prevents showing the renderer window (opaque black) before content is ready.
@@ -73,6 +74,7 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
     if (defView != nullptr) {
         std::cout << "Found SHELLDLL_DefView inside HWND: 0x" << std::hex << reinterpret_cast<uintptr_t>(hwnd) << std::dec << "\n";
         g_iconsParent = hwnd;
+        g_defView = defView;
         WorkerWSearch* search = reinterpret_cast<WorkerWSearch*>(lParam);
         // The WorkerW we want is the NEXT sibling after hwnd, not a child.
         search->result = FindWindowEx(nullptr, hwnd, "WorkerW", nullptr);
@@ -337,9 +339,8 @@ void Render(int fpsCap) {
     } else {
         if (!IsWindowVisible(g_hwnd) && g_hasWallpaperLoaded) {
             ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
-            // Position renderer just behind the icons window so icons stay visible
-            if (g_iconsParent) {
-                SetWindowPos(g_hwnd, g_iconsParent, 0, 0, 0, 0,
+            if (g_defView) {
+                SetWindowPos(g_hwnd, g_defView, 0, 0, 0, 0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             }
         }
@@ -370,11 +371,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_TIMER:
         if (wParam == 2) {
             PowerManager::Update();
-            // Maintain z-order: keep renderer just behind icons parent
-            if (g_iconsParent && IsWindowVisible(g_hwnd)) {
+            if (g_defView && IsWindowVisible(g_hwnd)) {
                 HWND above = GetWindow(g_hwnd, GW_HWNDPREV);
-                if (above != g_iconsParent) {
-                    SetWindowPos(g_hwnd, g_iconsParent, 0, 0, 0, 0,
+                if (above != g_defView) {
+                    SetWindowPos(g_hwnd, g_defView, 0, 0, 0, 0,
                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                 }
             }
@@ -413,15 +413,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // Give Windows a moment to rebuild the desktop hierarchy after wakeup
             Sleep(1500);
             HWND newWorkerW = GetWorkerW();
-            if (newWorkerW) {
-                SetParent(g_hwnd, newWorkerW);
+            if (newWorkerW && g_iconsParent) {
                 g_workerw = newWorkerW;
-                if (g_iconsParent && IsWindowVisible(g_hwnd)) {
-                    SetWindowPos(g_hwnd, g_iconsParent, 0, 0, 0, 0,
+                SetParent(g_hwnd, g_iconsParent);
+                if (g_defView) {
+                    SetWindowPos(g_hwnd, g_defView, 0, 0, 0, 0,
                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                 }
-                std::cout << "[Core] Re-parented to WorkerW: 0x" << std::hex
-                          << reinterpret_cast<uintptr_t>(newWorkerW) << std::dec << "\n";
+                std::cout << "[Core] Re-parented to icons container: 0x" << std::hex
+                          << reinterpret_cast<uintptr_t>(g_iconsParent) << std::dec << "\n";
                 // Force a resize/repaint to ensure DXGI surface is valid again
                 RECT rc;
                 GetClientRect(g_hwnd, &rc);
@@ -550,7 +550,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
         return 1;
     }
 
-    SetParent(g_hwnd, workerW);
     g_workerw = workerW;
 
     std::cout << "Renderer HWND: 0x" << std::hex << reinterpret_cast<uintptr_t>(g_hwnd) << std::dec << "\n";
@@ -591,10 +590,44 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
     std::string pluginsDir = exeDir + "\\plugins";
 
     g_pluginLoader.LoadAllPlugins(pluginsDir);
-    // Note: We no longer initialize all plugins at startup to prevent state bleeding.
-    // Initialization is deferred until a plugin becomes active via set_effect.
-    
-    // Set initial window state based on active plugin (null on startup)
+
+    // Convert to WS_CHILD and parent to the visible desktop window (g_iconsParent).
+    // g_iconsParent holds SHELLDLL_DefView (icons). By being a child of this visible
+    // window and z-ordered behind DefView, our effect renders above the wallpaper
+    // but below the icons — exactly what we need.
+    if (g_iconsParent) {
+        LONG style = GetWindowLongA(g_hwnd, GWL_STYLE);
+        style &= ~WS_POPUP;
+        style |= WS_CHILD;
+        SetWindowLongA(g_hwnd, GWL_STYLE, style);
+
+        LONG exStyle = GetWindowLongA(g_hwnd, GWL_EXSTYLE);
+        exStyle |= WS_EX_TRANSPARENT;
+        SetWindowLongA(g_hwnd, GWL_EXSTYLE, exStyle);
+
+        SetWindowPos(g_hwnd, nullptr, 0, 0, 0, 0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+
+        SetParent(g_hwnd, g_iconsParent);
+
+        if (g_defView) {
+            SetWindowPos(g_hwnd, g_defView, 0, 0, screenWidth, screenHeight, SWP_NOACTIVATE);
+        } else {
+            SetWindowPos(g_hwnd, HWND_BOTTOM, 0, 0, screenWidth, screenHeight, SWP_NOACTIVATE);
+        }
+
+        std::cout << "[Core] Parented to icons container 0x" << std::hex
+                  << reinterpret_cast<uintptr_t>(g_iconsParent) << ", behind DefView 0x"
+                  << reinterpret_cast<uintptr_t>(g_defView) << std::dec << "\n";
+
+        // Force swap chain to adapt to the new window hierarchy
+        g_pd3dDeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
+        CleanupRenderTarget();
+        g_pSwapChain->ResizeBuffers(0, screenWidth, screenHeight, DXGI_FORMAT_UNKNOWN, 0);
+        CreateRenderTarget();
+        g_pluginContext.mainRenderTargetView = g_mainRenderTargetView;
+    }
+
     ShowWindow(g_hwnd, SW_HIDE);
 
     // ---- Setup Power Manager & timer ----
@@ -796,9 +829,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 g_pluginLoader.SetActivePlugin("");
                 g_hasWallpaperLoaded = false;
 
-                // Unparent the renderer window from WorkerW so it doesn't
-                // block other processes (web_wallpaper) from using WorkerW.
                 if (GetParent(g_hwnd) != nullptr) {
+                    LONG style = GetWindowLongA(g_hwnd, GWL_STYLE);
+                    style &= ~WS_CHILD;
+                    style |= WS_POPUP;
+                    SetWindowLongA(g_hwnd, GWL_STYLE, style);
                     SetParent(g_hwnd, nullptr);
                 }
 
