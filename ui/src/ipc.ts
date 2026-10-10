@@ -88,6 +88,10 @@ export async function stopWebWallpaper(): Promise<void> {
     return invoke("stop_web_wallpaper");
 }
 
+export async function getWebConfig(): Promise<any | null> {
+    return invoke("get_web_config");
+}
+
 export async function importWebAsset(filePath: string): Promise<string> {
     return invoke("import_web_asset", { filePath });
 }

@@ -8,8 +8,8 @@ import { useEffect, useState } from 'react';
 import About from './pages/About';
 import Gallery from './pages/Gallery';
 import WebWallpaper from './pages/WebWallpaper';
-import { loadSettings, applySettingsToBackend, getActiveSession, loadEffectSettings } from './store';
-import { setSetting, isAutostart } from './ipc';
+import { loadSettings, applySettingsToBackend, getActiveSession, loadEffectSettings, loadQualitySettings } from './store';
+import { setSetting, isAutostart, startWebWallpaper, getWebConfig, setFpsCap, setResolutionScale } from './ipc';
 import { applyWallpaper, setEffect } from './wallpaperManager';
 
 function App() {
@@ -28,7 +28,25 @@ function App() {
       } else {
         // Autostart (tray launch) — restore last session silently
         getActiveSession().then(async (session) => {
-          if (session && session.effect !== 'web-wallpaper') {
+          if (!session) return;
+          if (session.effect === 'web-wallpaper') {
+            const config = await getWebConfig();
+            if (config) {
+              await startWebWallpaper(
+                config.model,
+                config.backgroundType,
+                config.backgroundColor,
+                config.backgroundImage || undefined,
+                config.rotationFactor,
+                config.zoomFactor,
+                config.offsetX,
+                config.offsetY,
+                config.enableVerticalRotation,
+                config.initialRotationX,
+                config.initialRotationY
+              );
+            }
+          } else {
             await applyWallpaper(session.layerA, session.layerB);
             await setEffect(session.effect);
             const settings = await loadEffectSettings(session.effect);
@@ -40,6 +58,9 @@ function App() {
               }, 100);
             }
           }
+          const quality = await loadQualitySettings();
+          if (quality.fpsCap !== null) await setFpsCap(quality.fpsCap);
+          if (quality.resolutionScale !== null) await setResolutionScale(quality.resolutionScale);
         }).catch(console.error);
       }
     }).catch(() => {

@@ -409,6 +409,18 @@ pub fn stop_web_wallpaper() -> Result<(), String> {
 }
 
 #[command]
+pub fn get_web_config() -> Result<Option<serde_json::Value>, String> {
+    let app_data = std::env::var("APPDATA").map_err(|_| "Could not find APPDATA".to_string())?;
+    let config_path = PathBuf::from(&app_data).join("Graffiti").join("web_config.json");
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let contents = fs::read_to_string(&config_path).map_err(|e| format!("Failed to read web_config.json: {}", e))?;
+    let config: serde_json::Value = serde_json::from_str(&contents).map_err(|e| format!("Failed to parse web_config.json: {}", e))?;
+    Ok(Some(config))
+}
+
+#[command]
 pub fn import_web_asset(file_path: String) -> Result<String, String> {
     let source = Path::new(&file_path);
     if !source.exists() {

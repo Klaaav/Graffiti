@@ -110,6 +110,7 @@ pub fn run() {
             ipc_client::clear_wallpaper,
             ipc_client::start_web_wallpaper,
             ipc_client::stop_web_wallpaper,
+            ipc_client::get_web_config,
             ipc_client::import_web_asset,
             depth::generate_depth_map,
             is_autostart,

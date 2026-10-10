@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { setSetting, setFpsCap, setResolutionScale, setQualityAuto, importWallpaper, generateDepthMap, getStatus, listWallpapers, fileExists } from '../ipc';
 import { applyWallpaper, setEffect, removeEffect } from '../wallpaperManager';
-import { saveWallpaperPairing, loadEffectSettings, saveEffectSettings, saveActiveSession, getActiveSession, saveSelectedEffect, loadSelectedEffect } from '../store';
+import { saveWallpaperPairing, loadEffectSettings, saveEffectSettings, saveActiveSession, getActiveSession, saveSelectedEffect, loadSelectedEffect, saveQualitySetting } from '../store';
 import { open } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import EffectDial from '../components/EffectDial';
@@ -346,6 +346,7 @@ export default function Effects() {
       setSelectedEffect('depth_parallax');
       await saveWallpaperPairing(testWallpaper, 'depth_parallax', { parallaxStrength });
       await saveActiveSession({ layerA: testWallpaper, layerB: depthImage, effect: 'depth_parallax', isGalleryCollage });
+      await saveEffectSettings('depth_parallax', { parallaxStrength, testWallpaper });
       await setSetting('parallaxStrength', parallaxStrength);
     } catch (err: any) {
       console.error("Failed to activate depth parallax", err);
@@ -361,11 +362,13 @@ export default function Effects() {
   const handleFpsCapChange = async (fps: number) => {
     setFpsCapState(fps);
     await setFpsCap(fps);
+    await saveQualitySetting('fpsCap', fps);
   };
 
   const handleResolutionScaleChange = async (scale: number) => {
     setResolutionScaleState(scale);
     await setResolutionScale(scale);
+    await saveQualitySetting('resolutionScale', scale);
     await rePushActiveEffectSettings();
   };
 
@@ -424,6 +427,11 @@ export default function Effects() {
       setActiveEffect('cursor_reveal');
       setSelectedEffect('cursor_reveal');
       await saveActiveSession({ layerA, layerB, effect: 'cursor_reveal', isGalleryCollage });
+      await saveEffectSettings('cursor_reveal', {
+        layerA, layerB,
+        brushSize, brushHardness: crBrushHardness, trailLength: crTrailLength,
+        fadeSpeed: crFadeSpeed, fadeWhenResting: crFadeWhenResting ? 1 : 0,
+      });
       await setSetting('brushSize', brushSize);
       await setSetting('brushHardness', crBrushHardness);
       await setSetting('trailLength', crTrailLength);
@@ -446,6 +454,12 @@ export default function Effects() {
       setActiveEffect('gravity_lens');
       setSelectedEffect('gravity_lens');
       await saveActiveSession({ layerA: glBaseImage, layerB: "", effect: 'gravity_lens', isGalleryCollage });
+      await saveEffectSettings('gravity_lens', {
+        baseImage: glBaseImage,
+        lensStrength: glStrength, lensRadius: glRadius, stiffness: glStiffness,
+        damping: glDamping, dispersion: glDispersion, coreDarkening: glDarkening,
+        trailLength: glTrailLength, fadeDecay: glFadeDecay,
+      });
       await setSetting('lensStrength', glStrength);
       await setSetting('lensRadius', glRadius);
       await setSetting('stiffness', glStiffness);
@@ -469,6 +483,12 @@ export default function Effects() {
       setActiveEffect('gravity_lens_transparent');
       setSelectedEffect('gravity_lens_transparent');
       await saveActiveSession({ layerA: gltBaseImage, layerB: "", effect: 'gravity_lens_transparent', isGalleryCollage });
+      await saveEffectSettings('gravity_lens_transparent', {
+        baseImage: gltBaseImage,
+        pressDepth: gltDepth, pressRadius: gltRadius, stiffness: gltStiffness,
+        damping: gltDamping, dispersion: gltDispersion, coreDarkening: gltDarkening,
+        shadingStrength: gltShading, trailLength: gltTrailLength, fadeDecay: gltFadeDecay,
+      });
       await setSetting('pressDepth', gltDepth);
       await setSetting('pressRadius', gltRadius);
       await setSetting('stiffness', gltStiffness);
@@ -493,6 +513,12 @@ export default function Effects() {
       setActiveEffect('stone_press_v2');
       setSelectedEffect('stone_press_v2');
       await saveActiveSession({ layerA: sp2BaseImage, layerB: "", effect: 'stone_press_v2', isGalleryCollage });
+      await saveEffectSettings('stone_press_v2', {
+        baseImage: sp2BaseImage,
+        pressDepth: sp2Depth, pressRadius: sp2Radius, stiffness: sp2Stiffness,
+        damping: sp2Damping, depthDarkening: sp2Darkening, directionalShading: sp2DirectionalShading,
+        parallaxStrength: sp2ParallaxStrength,
+      });
       await setSetting('pressDepth', sp2Depth);
       await setSetting('pressRadius', sp2Radius);
       await setSetting('stiffness', sp2Stiffness);
@@ -515,6 +541,12 @@ export default function Effects() {
       setActiveEffect('brick_outline');
       setSelectedEffect('brick_outline');
       await saveActiveSession({ layerA: boBaseImage, layerB: "", effect: 'brick_outline', isGalleryCollage });
+      await saveEffectSettings('brick_outline', {
+        baseImage: boBaseImage,
+        brickWidth: boBrickWidth, brickHeight: boBrickHeight, lineThickness: boLineThickness,
+        effectRadius: boEffectRadius, edgeSoftness: boEdgeSoftness, glowIntensity: boGlowIntensity,
+        outlineColor: boOutlineColor,
+      });
       await setSetting('brickWidth', boBrickWidth);
       await setSetting('brickHeight', boBrickHeight);
       await setSetting('lineThickness', boLineThickness);

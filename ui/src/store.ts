@@ -194,6 +194,19 @@ export async function saveActiveSession(session: ActiveSession | null) {
     await store.save();
 }
 
+export async function loadQualitySettings(): Promise<{ fpsCap: number | null; resolutionScale: number | null }> {
+    const store = await getStore();
+    const fpsCap = await store.get<number>('fpsCap');
+    const resolutionScale = await store.get<number>('resolutionScale');
+    return { fpsCap: fpsCap ?? null, resolutionScale: resolutionScale ?? null };
+}
+
+export async function saveQualitySetting(key: 'fpsCap' | 'resolutionScale', value: number) {
+    const store = await getStore();
+    await store.set(key, value);
+    await store.save();
+}
+
 export async function saveSelectedEffect(effectId: string) {
     const store = await getStore();
     await store.set('lastSelectedEffect', effectId);
