@@ -1,9 +1,24 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod depth;
 mod ipc_client;
 
 use tauri::Manager;
 use std::path::Path;
+
+#[cfg(windows)]
+fn boost_startup_priority() {
+    use std::os::raw::c_void;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn SetPriorityClass(hProcess: *mut c_void, dwPriorityClass: u32) -> i32;
+    }
+    const ABOVE_NORMAL_PRIORITY_CLASS: u32 = 0x00008000;
+    unsafe {
+        let handle = GetCurrentProcess();
+        SetPriorityClass(handle, ABOVE_NORMAL_PRIORITY_CLASS);
+    }
+    println!("[Startup] Process priority set to AboveNormal");
+}
 
 #[tauri::command]
 fn is_autostart() -> bool {
@@ -74,13 +89,13 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // If it's NOT an autostart, we want to show the UI.
-            // If it IS an autostart, it starts hidden (because of tauri.conf.json visible: false).
-            if !std::env::args().any(|arg| arg == "--autostart") {
+            if std::env::args().any(|arg| arg == "--autostart") {
+                #[cfg(windows)]
+                boost_startup_priority();
+            } else {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
-                    // Set icon AFTER show() so the HWND is fully realized before WM_SETICON
                     let _ = window.set_icon(tauri::include_image!("icons/128x128.png"));
                 }
             }

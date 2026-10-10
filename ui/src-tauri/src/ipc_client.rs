@@ -11,9 +11,9 @@ const PIPE_NAME: &str = r"\\.\pipe\Graffiti";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 static WEB_WALLPAPER_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
+static RENDERER_SPAWN_LOCK: Mutex<bool> = Mutex::new(false);
 
 fn get_renderer_path() -> PathBuf {
-    // Try relative to exe first (for packaged builds), then fall back to dev path
     if let Ok(exe) = std::env::current_exe() {
         let relative = exe
             .parent()
@@ -23,31 +23,50 @@ fn get_renderer_path() -> PathBuf {
             return relative;
         }
     }
-    // Dev fallback: hardcoded project path
     PathBuf::from(r"C:\My_Proj\InteractWall\renderer\build\Release\GraffitiRenderer.exe")
 }
 
+const ABOVE_NORMAL_PRIORITY_CLASS: u32 = 0x00008000;
+
+fn ensure_renderer_running() -> Result<(), String> {
+    let mut spawned = RENDERER_SPAWN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    if OpenOptions::new().read(true).write(true).open(PIPE_NAME).is_ok() {
+        return Ok(());
+    }
+    if !*spawned {
+        println!("[IPC] Pipe not found, spawning renderer...");
+        let renderer_path = get_renderer_path();
+        let is_autostart = std::env::args().any(|a| a == "--autostart");
+        let flags = if is_autostart {
+            CREATE_NO_WINDOW | ABOVE_NORMAL_PRIORITY_CLASS
+        } else {
+            CREATE_NO_WINDOW
+        };
+        Command::new(&renderer_path)
+            .creation_flags(flags)
+            .spawn()
+            .map_err(|e| format!("Failed to spawn renderer at {:?}: {}", renderer_path, e))?;
+        *spawned = true;
+    }
+    Ok(())
+}
+
 fn send_ipc_message(msg: &serde_json::Value) -> Result<String, String> {
-    // Check if pipe exists, if not try spawning the renderer
     let mut file = match OpenOptions::new().read(true).write(true).open(PIPE_NAME) {
         Ok(f) => f,
         Err(_) => {
-            println!("[IPC] Pipe not found, attempting to spawn renderer...");
-            let renderer_path = get_renderer_path();
-            Command::new(&renderer_path)
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn()
-                .map_err(|e| format!("Failed to spawn renderer at {:?}: {}", renderer_path, e))?;
-
-            // Wait for it to start
-            std::thread::sleep(std::time::Duration::from_millis(500));
-
-            // Try again
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(PIPE_NAME)
-                .map_err(|e| format!("Renderer started, but pipe still failed: {}", e))?
+            ensure_renderer_running()?;
+            let delays = [300, 600, 1200, 2000, 3000];
+            let mut last_err = String::new();
+            let mut connected = None;
+            for delay in &delays {
+                std::thread::sleep(std::time::Duration::from_millis(*delay));
+                match OpenOptions::new().read(true).write(true).open(PIPE_NAME) {
+                    Ok(f) => { connected = Some(f); break; }
+                    Err(e) => { last_err = e.to_string(); }
+                }
+            }
+            connected.ok_or_else(|| format!("Renderer pipe not ready after retries: {}", last_err))?
         }
     };
 

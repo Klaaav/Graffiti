@@ -35,3 +35,30 @@ wallpapers/
 # OS generated files
 Thumbs.db
 .DS_Store
+
+# WebView2 SDK package (binary, restored via NuGet)
+web_wallpaper/webview2/
+
+# CMake build output
+renderer/build/
+
+# Build logs and temp files
+build_log.txt
+temp_font.ttf
+
+# Font archives (assets stored elsewhere)
+BodoniModa.zip
+BodoniModa-Variable.ttf
+
+# Screenshots / session captures
+App_UI_SS/
+graffiti-website-*.jpeg
+
+# Impeccable skill runtime artifacts
+.impeccable/
+
+# Website — Node.js artifacts
+website/node_modules/
+website/dist/
+website/dev.log
+website/.astro/

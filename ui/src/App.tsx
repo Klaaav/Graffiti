@@ -17,54 +17,60 @@ function App() {
   const [splashExiting, setSplashExiting] = useState(false);
 
   useEffect(() => {
-    loadSettings().then(applySettingsToBackend).catch(console.error);
-
-    isAutostart().then((isAuto) => {
+    isAutostart().then(async (isAuto) => {
       if (!isAuto) {
-        // Fresh launch — show welcome screen
+        // Fresh launch — apply engine settings, show welcome screen
+        loadSettings().then(applySettingsToBackend).catch(console.error);
         setShowSplash(true);
         setTimeout(() => setSplashExiting(true), 2100);
         setTimeout(() => setShowSplash(false), 2900);
       } else {
-        // Autostart (tray launch) — restore last session silently
-        getActiveSession().then(async (session) => {
-          if (!session) return;
-          if (session.effect === 'web-wallpaper') {
-            const config = await getWebConfig();
-            if (config) {
-              await startWebWallpaper(
-                config.model,
-                config.backgroundType,
-                config.backgroundColor,
-                config.backgroundImage || undefined,
-                config.rotationFactor,
-                config.zoomFactor,
-                config.offsetX,
-                config.offsetY,
-                config.enableVerticalRotation,
-                config.initialRotationX,
-                config.initialRotationY
-              );
-            }
-          } else {
-            await applyWallpaper(session.layerA, session.layerB);
-            await setEffect(session.effect);
-            const settings = await loadEffectSettings(session.effect);
-            if (settings) {
-              setTimeout(async () => {
-                for (const [k, v] of Object.entries(settings)) {
+        // Autostart (tray launch) — restore last session, then apply engine settings
+        try {
+          const session = await getActiveSession();
+          if (session) {
+            if (session.effect === 'web-wallpaper') {
+              const config = await getWebConfig();
+              if (config) {
+                await startWebWallpaper(
+                  config.model,
+                  config.backgroundType,
+                  config.backgroundColor,
+                  config.backgroundImage || undefined,
+                  config.rotationFactor,
+                  config.zoomFactor,
+                  config.offsetX,
+                  config.offsetY,
+                  config.enableVerticalRotation,
+                  config.initialRotationX,
+                  config.initialRotationY
+                );
+              }
+            } else {
+              await applyWallpaper(session.layerA, session.layerB);
+              await setEffect(session.effect);
+              const effectSettings = await loadEffectSettings(session.effect);
+              if (effectSettings) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+                for (const [k, v] of Object.entries(effectSettings)) {
                   await setSetting(k, v);
                 }
-              }, 100);
+              }
             }
           }
+          // Restore quality settings regardless of active session
           const quality = await loadQualitySettings();
           if (quality.fpsCap !== null) await setFpsCap(quality.fpsCap);
           if (quality.resolutionScale !== null) await setResolutionScale(quality.resolutionScale);
-        }).catch(console.error);
+          // Apply engine settings after session restore so they don't race
+          const appSettings = await loadSettings();
+          await applySettingsToBackend(appSettings);
+        } catch (e) {
+          console.error('[Autostart] Session restore failed:', e);
+        }
       }
     }).catch(() => {
-      // If isAutostart call fails, show splash as if fresh launch
+      loadSettings().then(applySettingsToBackend).catch(console.error);
       setShowSplash(true);
       setTimeout(() => setSplashExiting(true), 2100);
       setTimeout(() => setShowSplash(false), 2900);

@@ -1,0 +1,82 @@
+{
+  "source": "http://127.0.0.1:4321/",
+  "tokens": {
+    "spacing": {
+      "scale": [4, 8, 12, 16, 20, 24, 32, 48, 64, 96, 128],
+      "base_unit": 8
+    },
+    "typography": {
+      "families": ["Bodoni Moda", "General Sans", "ui-monospace"],
+      "scale": [
+        { "role": "hero", "size": "128px", "weight": "500", "lineHeight": "1.0", "family": "Bodoni Moda" },
+        { "role": "h2", "size": "60px", "weight": "500", "lineHeight": "1.25", "family": "Bodoni Moda" },
+        { "role": "h3", "size": "48px", "weight": "500", "lineHeight": "1.0", "letterSpacing": "-1.2px", "family": "Bodoni Moda" },
+        { "role": "body-large", "size": "24px", "weight": "400", "lineHeight": "1.625", "family": "General Sans", "maxWidth": "672px" },
+        { "role": "body", "size": "18px", "weight": "400", "family": "General Sans" },
+        { "role": "caption", "size": "14px", "weight": "400", "family": "General Sans" },
+        { "role": "label", "size": "12px", "weight": "400", "family": "General Sans" }
+      ]
+    },
+    "colors": [
+      { "role": "background", "value": "#0b0a08" },
+      { "role": "surface-raised", "value": "#16130e" },
+      { "role": "surface-overlay", "value": "rgba(11,10,8,0.94)" },
+      { "role": "text-primary", "value": "#f5efe2" },
+      { "role": "text-secondary", "value": "#a89c87" },
+      { "role": "accent", "value": "#c9a24d" },
+      { "role": "accent-muted", "value": "rgba(212,175,106,0.25)" },
+      { "role": "border", "value": "#443e33" }
+    ],
+    "radius": ["0px", "4px"],
+    "shadows": [],
+    "image_ratios": [
+      { "usage": "logo", "ratio": "1:1" },
+      { "usage": "feature", "ratio": "1:1" }
+    ],
+    "grid": { "max_width": "1280px", "columns": null, "gutter": "48px", "method": "flexbox" },
+    "buttons": {
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "letterSpacing": "1.4px",
+      "textTransform": "uppercase",
+      "borderRadius": "0px",
+      "padding": "12px 32px"
+    },
+    "motion": {
+      "spatial": "0.5s cubic-bezier(0.25, 1, 0.5, 1)",
+      "state": "0.15s cubic-bezier(0.4, 0, 0.2, 1)",
+      "entrance": "2.5s cubic-bezier(0, 0, 0.2, 1)",
+      "reducedMotion": true
+    }
+  },
+  "taste": [
+    {
+      "name": "Editorial Over Interface",
+      "trigger": "When choosing a typographic identity for a GPU utility's marketing page",
+      "decision": "Chose Bodoni serif display + General Sans body pairing over a uniform geometric sans-serif",
+      "reason": "A wallpaper engine sells an aesthetic experience, not a workflow. The Bodoni communicates that the product cares about visual taste, which is the product's core promise.",
+      "evidence": ["Bodoni Moda at 128px/500 for h1", "General Sans at 24px/400 for body", "Serif reserved for headings only, never body"]
+    },
+    {
+      "name": "Warm-Tinted Neutrals Over Pure Darks",
+      "trigger": "When building a dark palette for a product that runs behind desktop icons all day",
+      "decision": "Tinted every neutral toward amber/brown and refused any pure gray, accepting higher maintenance cost",
+      "reason": "Warm tinting prevents the cold-terminal feeling of pure dark UIs. Since the product lives on the desktop permanently, the palette must feel like a living room wall, not a code editor.",
+      "evidence": ["Background #0b0a08 with visible brown undertone", "Secondary text #a89c87 (warm taupe)", "Zero pure grays in entire palette", "Even overlays use rgba(11,10,8,0.94)"]
+    },
+    {
+      "name": "No Cards, No Shadows — Trust the Padding",
+      "trigger": "When organizing six effect showcases into a scrollable page",
+      "decision": "Refused card containers or box shadows, relying on 128px/96px section padding and background color shifts",
+      "reason": "On a near-black surface, card borders create clutter, not clarity. 128px of silence between sections resets the eye without needing container edges.",
+      "evidence": ["0 cards detected", "0 perceivable shadows", "Section padding 128px top / 96px bottom", "Background shifts from #0b0a08 to #16130e"]
+    },
+    {
+      "name": "Gold Scarcity Over Gold Saturation",
+      "trigger": "When gold (#c9a24d) is the only chromatic color in a warm-neutral palette",
+      "decision": "Restricted gold to 5 text elements and 25%-opacity borders, rather than saturating headings and backgrounds",
+      "reason": "If gold appeared everywhere it becomes neutral. By making gold rare, each gold element carries meaning. The hero headline is off-white, not gold.",
+      "evidence": ["Gold #c9a24d on 5 text elements", "Warm taupe #a89c87 on 28 elements", "Accent borders at rgba(212,175,106,0.25)", "Accent occupies <1% of page area"]
+    }
+  ]
+}

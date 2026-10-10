@@ -1,0 +1,47 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SectionWrapper from '../components/SectionWrapper.astro';
+import { Hero } from '../components/Hero';
+import { Loader } from '../components/Loader';
+import { FloatingNav } from '../components/FloatingNav';
+import { EffectsSection } from '../components/EffectsSection';
+import { GallerySection } from '../components/GallerySection';
+import { WebWallpaperSection } from '../components/WebWallpaperSection';
+import DownloadSection from '../components/DownloadSection.astro';
+import RoadmapSection from '../components/RoadmapSection.astro';
+import FeedbackSection from '../components/FeedbackSection.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<BaseLayout>
+  <FloatingNav client:load />
+  
+  <!-- Interactive React Island for the Loader -->
+  <Loader client:load />
+
+  <SectionWrapper isHero={true} id="hero-section">
+    <!-- Interactive React Island for the Hero Reveal -->
+    <Hero client:load />
+  </SectionWrapper>
+
+  <!-- Centerpiece Scrollytelling Section -->
+  <EffectsSection client:load />
+
+  <!-- Gallery Section -->
+  <GallerySection client:load />
+
+  <!-- Web Wallpaper Section -->
+  <WebWallpaperSection client:load />
+
+  <!-- Download Section -->
+  <DownloadSection />
+
+  <!-- Future Plans Section -->
+  <RoadmapSection />
+
+  <!-- Feedback & Rating Section -->
+  <FeedbackSection />
+
+  <!-- Footer -->
+  <Footer />
+</BaseLayout>

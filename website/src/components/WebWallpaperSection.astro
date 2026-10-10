@@ -1,0 +1,84 @@
+---
+import SectionWrapper from './SectionWrapper.astro';
+---
+
+<SectionWrapper id="web-wallpaper" className="bg-[#050505] border-t border-[var(--color-border)] py-24 md:py-32 overflow-hidden">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex flex-col lg:flex-row items-center gap-16 lg:gap-24">
+      
+      {/* Left Column: Copy & Value Statement */}
+      <div class="w-full lg:w-5/12 space-y-8 relative z-10">
+        <div>
+          <span class="font-mono text-xs uppercase tracking-widest text-[var(--color-accent)] mb-4 block">Beta Feature</span>
+          <h2 class="font-display text-4xl md:text-5xl font-bold tracking-tight">
+            Web Wallpaper Mode
+          </h2>
+        </div>
+        
+        <p class="font-sans text-xl text-[var(--color-secondary)] leading-relaxed">
+          Import 3D model files and display them as an interactive, rotating wallpaper with customizable backgrounds. It's a completely different paradigm from our native 2D effects.
+        </p>
+        
+        <div class="p-6 bg-[#0A0A0A] border border-[var(--color-border)] rounded-xl relative overflow-hidden">
+           {/* Subtle highlight border top */}
+           <div class="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[var(--color-primary)] to-transparent opacity-30"></div>
+           
+           <p class="font-sans text-sm text-[var(--color-primary)] leading-relaxed relative z-10">
+             <strong>The Performance Tradeoff:</strong> This is an optional, heavier mode. It uses noticeably more system resources than Graffiti's native effects, and is clearly labeled as such in the app. We believe in being upfront about performance so you always know what your machine is doing.
+           </p>
+        </div>
+      </div>
+
+      {/* Right Column: Abstract 3D Visual */}
+      <div class="w-full lg:w-7/12 relative aspect-square md:aspect-video lg:aspect-square max-w-2xl mx-auto flex items-center justify-center">
+        
+        {/* Decorative Grid Background */}
+        <div class="absolute inset-0 opacity-20 pointer-events-none" style="background-image: radial-gradient(circle at center, var(--color-border) 1px, transparent 1px); background-size: 30px 30px;"></div>
+        
+        {/* CSS 3D Abstract Wireframe */}
+        <div class="relative w-64 h-64 md:w-80 md:h-80 perspective-1000">
+           <div class="w-full h-full transform-style-3d animate-[spin_20s_linear_infinite] group">
+              {/* Box Front */}
+              <div class="absolute inset-0 border border-[var(--color-accent)]/40 bg-[var(--color-accent)]/5 shadow-[0_0_50px_rgba(0,240,255,0.1)] transform translate-z-32"></div>
+              {/* Box Back */}
+              <div class="absolute inset-0 border border-[var(--color-primary)]/30 transform -translate-z-32"></div>
+              {/* Box Left */}
+              <div class="absolute inset-0 border border-[var(--color-primary)]/30 transform -translate-x-1/2 rotate-y-90"></div>
+              {/* Box Right */}
+              <div class="absolute inset-0 border border-[var(--color-primary)]/30 transform translate-x-1/2 rotate-y-90"></div>
+              {/* Box Top */}
+              <div class="absolute inset-0 border border-[var(--color-primary)]/30 transform -translate-y-1/2 rotate-x-90"></div>
+              {/* Box Bottom */}
+              <div class="absolute inset-0 border border-[var(--color-primary)]/30 transform translate-y-1/2 rotate-x-90"></div>
+              
+              {/* Core center node */}
+              <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-[var(--color-accent)] rounded-full blur-xl opacity-50 animate-pulse"></div>
+           </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+</SectionWrapper>
+
+<style>
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+  .transform-style-3d {
+    transform-style: preserve-3d;
+  }
+  .translate-z-32 {
+    transform: translateZ(8rem);
+  }
+  .-translate-z-32 {
+    transform: translateZ(-8rem);
+  }
+  .rotate-y-90 {
+    transform: rotateY(90deg);
+  }
+  .rotate-x-90 {
+    transform: rotateX(90deg);
+  }
+</style>

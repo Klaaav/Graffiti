@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://graffiti.klaaav.com/sitemap-index.xml

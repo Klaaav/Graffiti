@@ -1,0 +1,72 @@
+---
+import SectionWrapper from './SectionWrapper.astro';
+
+const roadmapItems = [
+  {
+    date: 'Q4 2026',
+    title: 'Steam Workshop Integration',
+    description: 'Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae; donec velit neque, auctor sit amet aliquam vel, ullamcorper sit amet ligula.',
+    status: 'planned'
+  },
+  {
+    date: 'Q1 2027',
+    title: 'Advanced Shader API',
+    description: 'Curabitur aliquet quam id dui posuere blandit. Nulla quis lorem ut libero malesuada feugiat. Mauris blandit aliquet elit, eget tincidunt nibh pulvinar a.',
+    status: 'planned'
+  },
+  {
+    date: 'Q2 2027',
+    title: 'Multi-Monitor Synchronization',
+    description: 'Praesent sapien massa, convallis a pellentesque nec, egestas non nisi. Proin eget tortor risus. Cras ultricies ligula sed magna dictum porta.',
+    status: 'planned'
+  }
+];
+---
+
+<SectionWrapper id="roadmap" className="bg-[#0A0A0A] border-t border-[var(--color-border)]/30 py-24 md:py-32">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    
+    <div class="mb-16 md:mb-24">
+      <h2 class="font-display text-4xl md:text-5xl font-bold tracking-tight mb-4 text-white">
+        Future Plans
+      </h2>
+      <p class="font-sans text-xl text-[var(--color-secondary)]">
+        What's next for the engine.
+      </p>
+    </div>
+
+    <div class="relative">
+      {/* Vertical Connecting Line */}
+      <div class="absolute left-[11px] md:left-[19px] top-4 bottom-4 w-px bg-[var(--color-border)]"></div>
+
+      <div class="space-y-16">
+        {roadmapItems.map((item, index) => (
+          <div class="relative flex gap-8 md:gap-12 group">
+            
+            {/* Timeline Node */}
+            <div class="relative z-10 flex-shrink-0 mt-1.5 md:mt-2">
+              <div class="w-6 h-6 md:w-10 md:h-10 rounded-full bg-[#050505] border-2 border-[var(--color-border)] flex items-center justify-center group-hover:border-[var(--color-primary)] transition-colors duration-300">
+                <div class="w-2 h-2 md:w-3 md:h-3 rounded-full bg-[var(--color-secondary)] group-hover:bg-[var(--color-primary)] transition-colors duration-300"></div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div class="flex-1 pb-4">
+              <span class="font-mono text-sm uppercase tracking-widest text-[var(--color-accent)] mb-2 block">
+                {item.date}
+              </span>
+              <h3 class="font-display text-2xl md:text-3xl font-bold text-white mb-4">
+                {item.title}
+              </h3>
+              <p class="font-sans text-lg text-[var(--color-secondary)] leading-relaxed max-w-2xl">
+                {item.description}
+              </p>
+            </div>
+            
+          </div>
+        ))}
+      </div>
+    </div>
+
+  </div>
+</SectionWrapper>

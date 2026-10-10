@@ -1,0 +1,22 @@
+---
+import SectionWrapper from './SectionWrapper.astro';
+import { FeedbackForm } from './FeedbackForm';
+---
+
+<SectionWrapper id="feedback" className="bg-[#0B0A08] border-t border-[var(--color-border)] py-24 md:py-32">
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    
+    <div class="mb-12 text-center">
+      <h2 class="font-display text-4xl md:text-5xl text-[var(--color-primary)] mb-4">
+        Feedback
+      </h2>
+      <p class="font-sans text-xl text-[var(--color-secondary)]">
+        Help shape the future of Graffiti.
+      </p>
+    </div>
+
+    {/* React Island for interactivity */}
+    <FeedbackForm client:load />
+
+  </div>
+</SectionWrapper>

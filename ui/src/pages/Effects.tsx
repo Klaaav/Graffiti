@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { setSetting, setFpsCap, setResolutionScale, setQualityAuto, importWallpaper, generateDepthMap, getStatus, listWallpapers, fileExists } from '../ipc';
 import { applyWallpaper, setEffect, removeEffect } from '../wallpaperManager';
-import { saveWallpaperPairing, loadEffectSettings, saveEffectSettings, saveActiveSession, getActiveSession, saveSelectedEffect, loadSelectedEffect, saveQualitySetting } from '../store';
+import { saveWallpaperPairing, loadEffectSettings, saveEffectSettings, saveActiveSession, getActiveSession, saveSelectedEffect, loadSelectedEffect, saveQualitySetting, loadQualitySettings } from '../store';
 import { open } from '@tauri-apps/plugin-dialog';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import EffectDial from '../components/EffectDial';
@@ -132,6 +132,16 @@ export default function Effects() {
   useEffect(() => {
     const loadGlobals = async () => {
       try {
+        const quality = await loadQualitySettings();
+        if (quality.fpsCap !== null) {
+          setFpsCapState(quality.fpsCap);
+          await setFpsCap(quality.fpsCap);
+        }
+        if (quality.resolutionScale !== null) {
+          setResolutionScaleState(quality.resolutionScale);
+          await setResolutionScale(quality.resolutionScale);
+        }
+
         const crSettings = await loadEffectSettings('cursor_reveal');
         if (crSettings) {
           if (crSettings.layerA) setLayerA(crSettings.layerA);
@@ -141,18 +151,12 @@ export default function Effects() {
           setCRTrailLength(crSettings.trailLength ?? 1.0);
           setCRFadeSpeed(crSettings.fadeSpeed ?? 0.035);
           setCRFadeWhenResting((crSettings.fadeWhenResting ?? 1) === 1);
-          setSetting('brushSize', crSettings.brushSize ?? 160);
-          setSetting('brushHardness', crSettings.brushHardness ?? 0.2);
-          setSetting('trailLength', crSettings.trailLength ?? 1.0);
-          setSetting('fadeSpeed', crSettings.fadeSpeed ?? 0.035);
-          setSetting('fadeWhenResting', crSettings.fadeWhenResting ?? 1);
         }
 
         const dpSettings = await loadEffectSettings('depth_parallax');
         if (dpSettings) {
           if (dpSettings.testWallpaper) setTestWallpaper(dpSettings.testWallpaper);
           setParallaxStrength(dpSettings.parallaxStrength ?? 0.05);
-          setSetting('parallaxStrength', dpSettings.parallaxStrength ?? 0.05);
         }
 
         const glSettings = await loadEffectSettings('gravity_lens');

@@ -1,0 +1,120 @@
+---
+import SectionWrapper from './SectionWrapper.astro';
+
+// We define the 3 steps of the Gallery feature
+const steps = [
+  {
+    number: "01",
+    title: "Draw Shapes",
+    description: "Draw custom polygon shapes directly on your desktop canvas. No rigid grids required.",
+    // A drawing animation abstraction
+    svg: `
+      <svg viewBox="0 0 100 100" class="w-full h-full opacity-60">
+        <path d="M20,20 L80,30 L70,80 L30,70 Z" fill="none" stroke="var(--color-primary)" stroke-width="1" class="dash-animation" />
+        <circle cx="20" cy="20" r="3" fill="var(--color-accent)" class="animate-pulse" />
+        <circle cx="80" cy="30" r="3" fill="var(--color-secondary)" />
+        <circle cx="70" cy="80" r="3" fill="var(--color-secondary)" />
+        <circle cx="30" cy="70" r="3" fill="var(--color-secondary)" />
+      </svg>
+    `
+  },
+  {
+    number: "02",
+    title: "Place Images",
+    description: "Drop a different image in each shape with full pan, zoom, and rotate controls to compose the perfect scene.",
+    // An image placement abstraction (transform/pan vectors)
+    svg: `
+      <svg viewBox="0 0 100 100" class="w-full h-full opacity-60">
+        <path d="M20,20 L80,30 L70,80 L30,70 Z" fill="rgba(255,255,255,0.05)" stroke="var(--color-border)" stroke-width="1" />
+        <!-- Image placeholder translating -->
+        <rect x="35" y="35" width="30" height="30" fill="var(--color-accent)" class="opacity-20 animate-[ping_3s_ease-in-out_infinite]" />
+        <!-- Move arrows -->
+        <path d="M50,40 L50,60 M40,50 L60,50" stroke="var(--color-primary)" stroke-width="1" />
+        <path d="M48,42 L50,38 L52,42 M48,58 L50,62 L52,58 M42,48 L38,50 L42,52 M58,48 L62,50 L58,52" fill="none" stroke="var(--color-primary)" stroke-width="1" />
+      </svg>
+    `
+  },
+  {
+    number: "03",
+    title: "Bake & Animate",
+    description: "Bake it all down into a single, high-performance wallpaper that reacts to any Graffiti effect.",
+    // A solidifying / glowing abstraction
+    svg: `
+      <svg viewBox="0 0 100 100" class="w-full h-full opacity-60">
+        <path d="M20,20 L80,30 L70,80 L30,70 Z" fill="var(--color-accent)" class="opacity-20 animate-[pulse_2s_ease-in-out_infinite]" />
+        <path d="M20,20 L80,30 L70,80 L30,70 Z" fill="none" stroke="var(--color-accent)" stroke-width="2" />
+        <!-- Sparks -->
+        <circle cx="20" cy="20" r="1" fill="var(--color-primary)" class="animate-ping" />
+        <circle cx="80" cy="30" r="1" fill="var(--color-primary)" class="animate-ping" style="animation-delay: 0.5s" />
+        <circle cx="70" cy="80" r="1" fill="var(--color-primary)" class="animate-ping" style="animation-delay: 1s" />
+      </svg>
+    `
+  }
+];
+---
+
+<SectionWrapper id="gallery" className="bg-[#0C0C0C] border-t border-[var(--color-border)]/30 py-24 md:py-32">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    
+    <div class="mb-20 md:mb-32 max-w-2xl">
+      <h2 class="font-display text-4xl md:text-5xl font-bold tracking-tight mb-6">
+        The Collage Builder
+      </h2>
+      <p class="font-sans text-xl text-[var(--color-secondary)] leading-relaxed">
+        Sometimes one image isn't enough. Graffiti's collage builder lets you architect custom layouts that behave exactly like a native single-image wallpaper.
+      </p>
+    </div>
+
+    {/* Staggered Zig-Zag Layout to avoid 3-column grid */}
+    <div class="space-y-24 md:space-y-32">
+      {steps.map((step, index) => (
+        <div class={`flex flex-col ${index % 2 !== 0 ? 'md:flex-row-reverse' : 'md:flex-row'} items-center gap-12 md:gap-24`}>
+          
+          {/* Abstract Visual Side */}
+          <div class="w-full md:w-1/2 relative aspect-square max-w-md mx-auto">
+             <div class="absolute inset-0 bg-[#0A0A0A] border border-[var(--color-border)] rounded-2xl shadow-xl overflow-hidden flex items-center justify-center p-8">
+               {/* Decorative background grid */}
+               <div class="absolute inset-0 opacity-10" style="background-image: linear-gradient(var(--color-border) 1px, transparent 1px), linear-gradient(90deg, var(--color-border) 1px, transparent 1px); background-size: 20px 20px;"></div>
+               <div class="relative z-10 w-full h-full" set:html={step.svg} />
+             </div>
+          </div>
+
+          {/* Text Content Side */}
+          <div class="w-full md:w-1/2 flex flex-col justify-center">
+            <span class="font-mono text-5xl text-[var(--color-accent)] opacity-50 mb-6 block">
+              {step.number}
+            </span>
+            <h3 class="font-display text-2xl md:text-3xl font-bold mb-4">
+              {step.title}
+            </h3>
+            <p class="font-sans text-lg text-[var(--color-secondary)] leading-relaxed max-w-md">
+              {step.description}
+            </p>
+          </div>
+
+        </div>
+      ))}
+    </div>
+
+  </div>
+</SectionWrapper>
+
+<style>
+  .dash-animation {
+    stroke-dasharray: 250;
+    stroke-dashoffset: 250;
+    animation: draw 4s ease-in-out infinite;
+  }
+
+  @keyframes draw {
+    0% {
+      stroke-dashoffset: 250;
+    }
+    50% {
+      stroke-dashoffset: 0;
+    }
+    100% {
+      stroke-dashoffset: 0;
+    }
+  }
+</style>
