@@ -1,0 +1,88 @@
+<div class="hero-motion">
+  <a class="hero-motion-stage" href="#effects" aria-label="Explore Graffiti’s cursor-reactive effects">
+    <span class="motion-word" aria-hidden="true">PLAY.</span>
+    <svg class="motion-sculpture" viewBox="0 0 640 620" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="motion-sheet" x1="92" y1="142" x2="564" y2="470" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#f7efd9" /><stop offset=".4" stop-color="#d6aa4a" /><stop offset="1" stop-color="#9c6525" />
+        </linearGradient>
+        <linearGradient id="motion-surface" x1="215" y1="122" x2="440" y2="522" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#fff3cd" /><stop offset=".26" stop-color="#f0cf75" /><stop offset=".58" stop-color="#d6aa4a" /><stop offset="1" stop-color="#95602c" />
+        </linearGradient>
+        <linearGradient id="motion-bevel" x1="205" y1="140" x2="466" y2="460" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#f7efd9" /><stop offset=".48" stop-color="#f0cf75" /><stop offset="1" stop-color="#b98132" />
+        </linearGradient>
+        <linearGradient id="motion-side" x1="376" y1="274" x2="410" y2="564" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#a74932" /><stop offset=".55" stop-color="#ef634d" /><stop offset="1" stop-color="#7f3b27" />
+        </linearGradient>
+      </defs>
+
+      <g class="motion-plane motion-plane-back">
+        <path d="m83 337 379-94 119 229-379 94Z" fill="#ef634d" />
+        <path d="m83 337 379-94 119 229-379 94Z" stroke="#ef8c6c" stroke-width="1.5" />
+        <path d="m110 370 379-94M127 403l379-94M144 436l379-94M161 469l379-94M178 502l379-94" stroke="#0c0d0c" stroke-opacity=".22" />
+      </g>
+      <g class="motion-plane motion-plane-middle">
+        <path d="m54 254 385-89 128 242-385 89Z" fill="#0c0d0c" stroke="#d6aa4a" stroke-width="2" />
+        <path d="m76 297 385-89M98 340l385-89M120 383l385-89M142 426l385-89" stroke="#d6aa4a" stroke-opacity=".45" />
+        <path d="m131 236 128 242M208 218l128 242M285 200l128 242M362 182l128 242" stroke="#d6aa4a" stroke-opacity=".32" />
+      </g>
+      <g class="motion-plane motion-plane-front">
+        <path d="m92 197 347-81 127 226-347 81Z" fill="url(#motion-sheet)" />
+        <path d="m92 197 347-81 127 226-347 81Z" stroke="#f7efd9" stroke-opacity=".6" stroke-width="1.5" />
+        <path d="M141 244c115-75 170 12 290-67M160 278c116-75 170 12 289-67M179 312c116-75 170 12 289-67M198 346c116-75 170 12 289-67" stroke="#0c0d0c" stroke-opacity=".5" stroke-width="2" />
+      </g>
+
+      <g class="motion-pointer">
+        <path d="m241 126 297 251-143 36 61 152-70 28-65-153-109 92Z" fill="url(#motion-side)" />
+        <path d="m226 103 297 251-143 36 61 152-70 28-65-153-109 92Z" fill="url(#motion-surface)" stroke="#0c0d0c" stroke-width="2" stroke-linejoin="round" />
+        <path d="m226 103 33 89 227 148 37 14Z" fill="#fff3cd" />
+        <path d="m226 103-29 406 45-77 17-240Z" fill="url(#motion-bevel)" />
+        <path d="m306 417 29-31 55 154-19 30Z" fill="#f7efd9" fill-opacity=".54" />
+        <path d="m486 340-141 33 35 17 143-36Z" fill="#95602c" />
+        <path d="m259 192 86 181-39 44-64 15Z" fill="#f0cf75" fill-opacity=".35" />
+      </g>
+
+      <g class="motion-sparks" stroke="#f7efd9" stroke-width="2">
+        <path d="M111 128v30m-15-15h30M503 175v24m-12-12h24" />
+        <path d="m529 533 10 10m-10 0 10-10" stroke="#d6aa4a" />
+      </g>
+    </svg>
+    <span class="motion-invitation"><span>Explore the effects</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14" /></svg></span>
+  </a>
+  <div class="hero-motion-caption"><p>A little movement.<br /><strong>A whole new desktop.</strong></p><span>Made to react.</span></div>
+</div>
+
+<script>
+  const stage = document.querySelector<HTMLElement>('.hero-motion-stage');
+  if (stage) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+    let frame = 0;
+    let bounds: DOMRect | undefined;
+    let x = 0;
+    let y = 0;
+
+    const render = () => {
+      stage.style.setProperty('--pointer-x', x.toFixed(3));
+      stage.style.setProperty('--pointer-y', y.toFixed(3));
+      frame = 0;
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(render); };
+    const reset = () => { x = 0; y = 0; bounds = undefined; schedule(); };
+
+    stage.addEventListener('pointerenter', () => { bounds = stage.getBoundingClientRect(); });
+    stage.addEventListener('pointermove', (event) => {
+      if (reducedMotion.matches || !finePointer.matches) return;
+      bounds ??= stage.getBoundingClientRect();
+      x = Math.max(-1, Math.min(1, ((event.clientX - bounds.left) / bounds.width) * 2 - 1));
+      y = Math.max(-1, Math.min(1, ((event.clientY - bounds.top) / bounds.height) * 2 - 1));
+      schedule();
+    });
+    stage.addEventListener('pointerleave', reset);
+    stage.addEventListener('blur', reset);
+    reducedMotion.addEventListener('change', reset);
+    window.addEventListener('resize', reset, { passive: true });
+    window.addEventListener('scroll', () => { bounds = undefined; }, { passive: true });
+  }
+</script>

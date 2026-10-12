@@ -81,7 +81,7 @@ export const PinnedScrollWrapper: React.FC<PinnedScrollWrapperProps> = ({
         {Array.from({ length: steps }).map((_, i) => (
           <div 
             key={i} 
-            className="w-full snap-start snap-normal"
+            className="w-full"
             style={{ 
               height: '100vh', 
               position: 'absolute',

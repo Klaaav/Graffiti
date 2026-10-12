@@ -20,6 +20,7 @@ install_manifest.txt
 # Editor / IDE
 .vscode/
 .idea/
+.opencode/
 *.swp
 *.swo
 
@@ -62,3 +63,7 @@ website/node_modules/
 website/dist/
 website/dev.log
 website/.astro/
+website-redesign/node_modules/
+website-redesign/dist/
+website-redesign/.astro/
+

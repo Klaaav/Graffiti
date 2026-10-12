@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 const SECTIONS = [
   { id: 'effects', label: 'Effects' },
   { id: 'gallery', label: 'Gallery' },
-  { id: 'web-wallpaper', label: 'Web Wallpaper' },
-  { id: 'feedback', label: 'Feedback' },
+  { id: 'web-wallpaper', label: '3D Wallpaper' },
+  { id: 'download', label: 'Download' },
 ];
 
 export const FloatingNav: React.FC = () => {
@@ -51,7 +51,7 @@ export const FloatingNav: React.FC = () => {
       <div className="fixed top-4 right-4 z-50">
         <button 
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="w-10 h-10 flex flex-col justify-center items-center gap-1.5 bg-[#16130E]/90 border border-[var(--color-border)] rounded-md focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)]"
+          className="w-10 h-10 flex flex-col justify-center items-center gap-1.5 bg-[#16130E]/90 border border-[var(--color-border)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent)]"
         >
           <span className={`w-5 h-px bg-[var(--color-accent)] transition-transform ${mobileMenuOpen ? 'rotate-45 translate-y-2' : ''}`} />
           <span className={`w-5 h-px bg-[var(--color-accent)] transition-opacity ${mobileMenuOpen ? 'opacity-0' : ''}`} />
@@ -59,7 +59,7 @@ export const FloatingNav: React.FC = () => {
         </button>
 
         {mobileMenuOpen && (
-          <div className="absolute top-12 right-0 bg-[#16130E]/95 border border-[var(--color-border)] p-4 flex flex-col gap-4 rounded-lg min-w-[200px]">
+          <div className="absolute top-12 right-0 bg-[#16130E]/95 border border-[var(--color-border)] p-4 flex flex-col gap-4 min-w-[200px]">
             {SECTIONS.map((s) => (
               <a
                 key={s.id}
@@ -70,17 +70,6 @@ export const FloatingNav: React.FC = () => {
                 {s.label}
               </a>
             ))}
-            <div className="h-px w-full bg-[var(--color-border)] my-2" />
-            <a
-              href="#download"
-              onClick={(e) => handleClick(e, 'download')}
-              className="font-sans text-xs uppercase tracking-widest text-[var(--color-primary)] flex items-center"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Download
-            </a>
           </div>
         )}
       </div>
@@ -124,19 +113,6 @@ export const FloatingNav: React.FC = () => {
             </a>
           ))}
 
-          {/* Download CTA Link */}
-          <a
-            href="#download"
-            onClick={(e) => handleClick(e, 'download')}
-            className="group relative font-sans text-xs uppercase tracking-[0.15em] text-[var(--color-primary)] py-2 flex items-center focus:outline-none"
-          >
-             <svg className="w-4 h-4 mr-2 text-[var(--color-accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-             </svg>
-             <span className="relative z-10 group-hover:tracking-[0.25em] transition-all duration-300 ease-out">
-               Download
-             </span>
-          </a>
         </div>
       </nav>
     </>

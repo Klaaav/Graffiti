@@ -22,12 +22,10 @@
 @layer base {
   html {
     scroll-behavior: auto;
-    scroll-snap-type: y mandatory;
   }
 
   astro-island {
     display: contents;
-    scroll-snap-align: start;
   }
 
   @media (prefers-reduced-motion: reduce) {

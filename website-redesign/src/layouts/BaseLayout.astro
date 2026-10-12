@@ -1,0 +1,16 @@
+---
+import '../styles/global.css';
+const { title = 'Graffiti — Make your wallpaper move', description = 'Graffiti turns your own images into interactive Windows desktop wallpapers.' } = Astro.props;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0c0d0c" />
+    <title>{title}</title>
+    <link rel="icon" href="/logos/logo_transparent.png" />
+  </head>
+  <body><slot /></body>
+</html>

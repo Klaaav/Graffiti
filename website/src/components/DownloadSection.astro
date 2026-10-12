@@ -1,34 +1,45 @@
 ---
 ---
-<section id="download" class="relative w-full py-24 md:py-32 bg-[#0B0A08] border-t border-[var(--color-border)] snap-start">
-  <div class="max-w-4xl mx-auto px-6 lg:px-8 text-center flex flex-col items-center">
-    
-    <h2 class="font-display text-5xl md:text-6xl text-[var(--color-primary)] mb-6">
+<section id="download" class="relative w-full py-32 md:py-40 bg-[var(--color-background)] border-t border-[var(--color-border)]">
+  {/* Subtle radial accent */}
+  <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(201,162,77,0.03) 0%, transparent 70%);" />
+
+  <div class="max-w-4xl mx-auto px-6 lg:px-8 text-center flex flex-col items-center relative z-10">
+
+    <h2 class="font-display text-5xl md:text-6xl lg:text-7xl text-[var(--color-primary)] mb-4">
       Download Graffiti
     </h2>
-    <p class="font-sans text-lg text-[var(--color-secondary)] max-w-2xl mb-12">
+    <p class="font-sans text-lg text-[var(--color-secondary)] max-w-lg mb-6">
       Native Windows 10/11 application. Zero cloud dependencies.
     </p>
 
+    {/* Version + size info */}
+    <div class="flex items-center gap-4 mb-12">
+      <span class="font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]">v1.1</span>
+      <span class="w-px h-4 bg-[var(--color-border)]"></span>
+      <span class="font-mono text-xs uppercase tracking-widest text-[var(--color-secondary)]">Windows x64</span>
+    </div>
+
     <div class="flex flex-col sm:flex-row items-center gap-6">
-      {/* Primary CTA (v1.1) */}
-      <a 
-        href="#" 
-        class="group relative inline-flex items-center justify-center px-10 py-4 border border-[var(--color-accent)] font-sans text-sm uppercase tracking-widest text-[var(--color-primary)] overflow-hidden transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B0A08] focus-visible:ring-[var(--color-accent)]"
+      {/* Primary CTA */}
+      <a
+        href="#"
+        class="group relative inline-flex items-center justify-center px-12 py-5 border border-[var(--color-accent)] font-sans text-sm uppercase tracking-widest text-[var(--color-primary)] overflow-hidden transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0B0A08] focus-visible:ring-[var(--color-accent)]"
       >
-        {/* Fill Wipe Background */}
         <div class="absolute inset-0 bg-gradient-to-r from-[#D4AF6A] to-[#F4E2B8] transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-500 ease-out" />
-        
         <span class="relative z-10 flex items-center group-hover:text-[#0B0A08] transition-colors duration-300">
+          <svg class="w-5 h-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
           Download v1.1
         </span>
       </a>
 
-      {/* Disabled CTA */}
-      <div class="px-10 py-4 border border-[var(--color-secondary)]/30 font-sans text-sm uppercase tracking-widest text-[var(--color-secondary)]/50 cursor-not-allowed">
+      {/* Disabled future CTA */}
+      <div class="px-10 py-5 border border-[var(--color-border)] font-sans text-sm uppercase tracking-widest text-[var(--color-secondary)]/40 cursor-not-allowed">
         Coming Soon
       </div>
     </div>
-    
+
   </div>
 </section>

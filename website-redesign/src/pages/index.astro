@@ -1,0 +1,70 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import EffectsStage from '../components/EffectsStage';
+import GallerySection from '../components/GallerySection';
+import HeroMotion from '../components/HeroMotion.astro';
+import ModelStage from '../components/ModelStage';
+import FeedbackForm from '../components/FeedbackForm';
+---
+
+<BaseLayout>
+  <header class="signal-bar">
+    <a class="signal-brand" href="#top" aria-label="Graffiti home">
+      <img src="/logos/logo_transparent.png" alt="Graffiti" />
+      <span>GRAFFITI<span class="brand-descriptor"> / WALLPAPER SYSTEM</span></span>
+    </a>
+    <div class="signal-status"><i aria-hidden="true"></i> local signal / windows</div>
+    <nav aria-label="Primary navigation">
+      <a href="#effects">Effects</a>
+      <a href="#gallery">Gallery</a>
+      <a href="#model">3D mode</a>
+      <a class="button button-small" href="#download">Get the app <b aria-hidden="true">↗</b></a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero-transmission" aria-labelledby="hero-title">
+      <div class="hero-rail" aria-hidden="true"><span>01</span><span>GRAFFITI</span><span>2026</span></div>
+      <div class="hero-brand-zone">
+        <div class="signal-kicker"><span>BOOT SEQUENCE</span><b>READY</b></div>
+        <img class="hero-logo" src="/logos/logo_transparent.png" alt="Graffiti" />
+        <h1 id="hero-title">Make the desktop<br /><span>move.</span></h1>
+        <p class="hero-copy">Bring the wallpaper you already own. Graffiti adds the response: cursor-reactive effects, running locally on your Windows desktop.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#effects">Explore effects <b aria-hidden="true">↓</b></a>
+          <a class="button button-ghost" href="#download">How to get it <b aria-hidden="true">↘</b></a>
+        </div>
+      </div>
+      <HeroMotion />
+      <div class="hero-bottom"><span>Scroll to wake the signal</span><span class="hero-line" aria-hidden="true"></span><span>Local by design</span></div>
+    </section>
+
+    <section class="statement-band" aria-label="Graffiti product principles">
+      <p><span>NO MARKETPLACE</span><strong>Your wallpapers stay yours.</strong></p>
+      <p><span>NO CLOUD REQUIRED</span><strong>The effects respond on your machine.</strong></p>
+      <p><span>ONE IMAGE</span><strong>Six ways to make it move.</strong></p>
+    </section>
+
+    <EffectsStage client:visible />
+    <GallerySection client:visible />
+    <ModelStage client:visible />
+
+    <section id="download" class="utility-section download-module">
+      <div class="utility-index">07 / ACCESS</div>
+      <div class="utility-main"><h2>Your desktop is<br /><span>waiting.</span></h2><p class="signal-kicker">GET GRAFFITI</p></div>
+      <div class="utility-detail"><p>Graffiti is a Windows desktop application. Import your own wallpaper and give it a cursor-reactive effect.</p><span class="button button-primary is-disabled" aria-disabled="true">Installer destination pending</span><small>The original project does not contain a verified installer or release URL yet. Provide that destination to make this action live.</small></div>
+    </section>
+
+    <section id="feedback" class="utility-section feedback-module">
+      <div class="utility-index">08 / RETURN SIGNAL</div>
+      <div class="utility-main"><h2>Leave a<br /><span>trace.</span></h2><p class="signal-kicker">FEEDBACK CHANNEL</p><p class="utility-intro">Questions, rough edges, an effect you want to try. Send a note from the page.</p></div>
+      <FeedbackForm client:visible />
+    </section>
+  </main>
+
+  <footer class="signal-footer">
+    <a class="signal-brand" href="#top"><img src="/logos/logo_transparent.png" alt="Graffiti" /><span>GRAFFITI / WALLPAPER SYSTEM</span></a>
+    <p>Made for the wallpaper you already own.</p>
+    <div><a href="#effects">Effects</a><a href="#gallery">Gallery</a><a href="#download">Download</a><a href="#feedback">Feedback</a></div>
+  </footer>
+</BaseLayout>

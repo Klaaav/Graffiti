@@ -19,8 +19,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     // Let's use font-sans and uppercase.
     
     const variants = {
-      primary: "bg-[var(--color-accent)] text-background hover:bg-[var(--color-accent-hover)] hover:-translate-y-1 hover:shadow-[0_0_15px_rgba(0,240,255,0.4)]",
-      secondary: "bg-[var(--color-border)] text-primary hover:bg-[#3f3f46] hover:-translate-y-1",
+      primary: "bg-[var(--color-accent)] text-[#0B0A08] hover:bg-[#D4AF6A] hover:-translate-y-1",
+      secondary: "bg-[#16130E] text-[var(--color-primary)] hover:bg-[#1E1A14] hover:-translate-y-1",
       outline: "border border-[var(--color-border)] text-primary hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
     };
 

@@ -10,6 +10,9 @@ export default function Effects() {
   const [fpsCap, setFpsCapState] = useState(60);
   const [resolutionScale, setResolutionScaleState] = useState(1.0);
   const [liveFps, setLiveFps] = useState<number>(0);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [layerA, setLayerA] = useState<string | null>(null);
+  const [layerB, setLayerB] = useState<string | null>(null);
 
   // Cursor Reveal Settings
   const [brushSize, setBrushSize] = useState(160);
@@ -217,63 +220,67 @@ export default function Effects() {
 
         const lastSelected = await loadSelectedEffect();
         if (lastSelected) setSelectedEffect(lastSelected);
+        setSettingsLoaded(true);
       } catch (err) {
         console.error("Failed to load global effect settings:", err);
       }
     };
     loadGlobals();
-
-    const handleBeforeUnload = () => {
-      if (debounceTimer.current) {
-        window.clearTimeout(debounceTimer.current);
-        debounceTimer.current = null;
-      }
-
-      const crSettings = {
-        layerA, layerB,
-        brushSize, brushHardness: crBrushHardness, trailLength: crTrailLength,
-        fadeSpeed: crFadeSpeed, fadeWhenResting: crFadeWhenResting ? 1 : 0,
-      };
-      saveEffectSettings('cursor_reveal', crSettings);
-
-      saveEffectSettings('depth_parallax', { parallaxStrength, testWallpaper });
-
-      const glSettings = {
-        baseImage: glBaseImage,
-        lensStrength: glStrength, lensRadius: glRadius, stiffness: glStiffness,
-        damping: glDamping, dispersion: glDispersion, coreDarkening: glDarkening,
-        trailLength: glTrailLength, fadeDecay: glFadeDecay,
-      };
-      saveEffectSettings('gravity_lens', glSettings);
-
-      const gltSettings = {
-        baseImage: gltBaseImage,
-        pressDepth: gltDepth, pressRadius: gltRadius, stiffness: gltStiffness,
-        damping: gltDamping, dispersion: gltDispersion, coreDarkening: gltDarkening,
-        shadingStrength: gltShading, trailLength: gltTrailLength, fadeDecay: gltFadeDecay,
-      };
-      saveEffectSettings('gravity_lens_transparent', gltSettings);
-
-      const sp2Settings = {
-        baseImage: sp2BaseImage,
-        pressDepth: sp2Depth, pressRadius: sp2Radius, stiffness: sp2Stiffness,
-        damping: sp2Damping, depthDarkening: sp2Darkening, directionalShading: sp2DirectionalShading,
-        parallaxStrength: sp2ParallaxStrength
-      };
-      saveEffectSettings('stone_press_v2', sp2Settings);
-
-      const boSettings = {
-        baseImage: boBaseImage,
-        brickWidth: boBrickWidth, brickHeight: boBrickHeight, lineThickness: boLineThickness,
-        effectRadius: boEffectRadius, edgeSoftness: boEdgeSoftness, glowIntensity: boGlowIntensity,
-        outlineColor: boOutlineColor
-      };
-      saveEffectSettings('brick_outline', boSettings);
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    saveEffectSettings('cursor_reveal', {
+      layerA, layerB,
+      brushSize, brushHardness: crBrushHardness, trailLength: crTrailLength,
+      fadeSpeed: crFadeSpeed, fadeWhenResting: crFadeWhenResting ? 1 : 0,
+    });
+  }, [settingsLoaded, layerA, layerB, brushSize, crBrushHardness, crTrailLength, crFadeSpeed, crFadeWhenResting]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    saveEffectSettings('depth_parallax', { parallaxStrength, testWallpaper });
+  }, [settingsLoaded, parallaxStrength, testWallpaper]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    saveEffectSettings('gravity_lens', {
+      baseImage: glBaseImage,
+      lensStrength: glStrength, lensRadius: glRadius, stiffness: glStiffness,
+      damping: glDamping, dispersion: glDispersion, coreDarkening: glDarkening,
+      trailLength: glTrailLength, fadeDecay: glFadeDecay,
+    });
+  }, [settingsLoaded, glBaseImage, glStrength, glRadius, glStiffness, glDamping, glDispersion, glDarkening, glTrailLength, glFadeDecay]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    saveEffectSettings('gravity_lens_transparent', {
+      baseImage: gltBaseImage,
+      pressDepth: gltDepth, pressRadius: gltRadius, stiffness: gltStiffness,
+      damping: gltDamping, dispersion: gltDispersion, coreDarkening: gltDarkening,
+      shadingStrength: gltShading, trailLength: gltTrailLength, fadeDecay: gltFadeDecay,
+    });
+  }, [settingsLoaded, gltBaseImage, gltDepth, gltRadius, gltStiffness, gltDamping, gltDispersion, gltDarkening, gltShading, gltTrailLength, gltFadeDecay]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    saveEffectSettings('stone_press_v2', {
+      baseImage: sp2BaseImage,
+      pressDepth: sp2Depth, pressRadius: sp2Radius, stiffness: sp2Stiffness,
+      damping: sp2Damping, depthDarkening: sp2Darkening, directionalShading: sp2DirectionalShading,
+      parallaxStrength: sp2ParallaxStrength,
+    });
+  }, [settingsLoaded, sp2BaseImage, sp2Depth, sp2Radius, sp2Stiffness, sp2Damping, sp2Darkening, sp2DirectionalShading, sp2ParallaxStrength]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    saveEffectSettings('brick_outline', {
+      baseImage: boBaseImage,
+      brickWidth: boBrickWidth, brickHeight: boBrickHeight, lineThickness: boLineThickness,
+      effectRadius: boEffectRadius, edgeSoftness: boEdgeSoftness, glowIntensity: boGlowIntensity,
+      outlineColor: boOutlineColor,
+    });
+  }, [settingsLoaded, boBaseImage, boBrickWidth, boBrickHeight, boLineThickness, boEffectRadius, boEdgeSoftness, boGlowIntensity, boOutlineColor]);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -359,9 +366,6 @@ export default function Effects() {
   };
 
 
-
-  const [layerA, setLayerA] = useState<string | null>(null);
-  const [layerB, setLayerB] = useState<string | null>(null);
 
   const handleFpsCapChange = async (fps: number) => {
     setFpsCapState(fps);

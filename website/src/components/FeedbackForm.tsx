@@ -194,7 +194,7 @@ export const FeedbackForm: React.FC = () => {
                     autoFocus
                   />
                   <div className="flex justify-end gap-4">
-                     <button onClick={() => setReplyingTo(null)} className="text-[var(--color-secondary)] hover:text-white uppercase tracking-widest text-xs">Cancel</button>
+                     <button onClick={() => setReplyingTo(null)} className="text-[var(--color-secondary)] hover:text-[var(--color-primary)] uppercase tracking-widest text-xs">Cancel</button>
                      <button onClick={() => handleReplySubmit(review.id)} className="text-[var(--color-accent)] hover:text-[#F4E2B8] uppercase tracking-widest text-xs">Submit</button>
                   </div>
                 </div>

@@ -384,7 +384,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_SIZE:
         // Guard both device AND swap chain (resize can arrive before InitD3D completes).
         if (g_pd3dDevice && g_pSwapChain && wParam != SIZE_MINIMIZED) {
-            // Unbind RTV from context — FLIP model ResizeBuffers fails with outstanding refs
+            // Unbind RTV from context before ResizeBuffers — outstanding refs cause failure
             g_pd3dDeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
             CleanupRenderTarget();
             g_pSwapChain->ResizeBuffers(

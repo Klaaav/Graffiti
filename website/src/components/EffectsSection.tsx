@@ -88,8 +88,17 @@ function useCursorPos(
 }
 
 // ─── Shared text overlay ───────────────────────────────────────────────────────
-const EffectLabel: React.FC<{ name: string; description: string }> = ({ name, description }) => (
+const EffectLabel: React.FC<{ name: string; description: string; index: number; total: number }> = ({ name, description, index, total }) => (
   <div className="absolute bottom-14 left-6 md:left-16 max-w-md z-30 pointer-events-none">
+    <div className="inline-flex items-center space-x-2 mb-3">
+      <span className="w-6 h-px bg-[var(--color-accent)]" />
+      <span
+        className="font-sans text-xs uppercase tracking-widest text-[var(--color-accent)]"
+        style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}
+      >
+        {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
+      </span>
+    </div>
     <h3
       className="font-display text-4xl md:text-5xl text-[var(--color-primary)] mb-3 tracking-tight"
       style={{ textShadow: '0 2px 12px rgba(0,0,0,0.9)' }}
@@ -585,12 +594,12 @@ export const EffectsSection: React.FC = () => {
   // In percentages of the container width, that is -(N-1)/N * 100 %.
   const translatePct = -(progress * ((EFFECTS.length - 1) / EFFECTS.length) * 100);
 
-  const renderEffect = (index: number) => {
-    const eff     = EFFECTS[index];
-    const visible = index === activeIndex;
+  const renderEffect = (idx: number) => {
+    const eff     = EFFECTS[idx];
+    const visible = idx === activeIndex;
 
     const inner = () => {
-      switch (index) {
+      switch (idx) {
         case 0: return <CursorRevealEffect  isActive={visible} />;
         case 1: return <GravityLensEffect   isActive={visible} mode="convex"  />;
         case 2: return <GravityLensEffect   isActive={visible} mode="concave" />;
@@ -608,16 +617,16 @@ export const EffectsSection: React.FC = () => {
         style={{ pointerEvents: visible ? 'auto' : 'none' }}
       >
         {inner()}
-        <EffectLabel name={eff.name} description={eff.description} />
+        <EffectLabel name={eff.name} description={eff.description} index={idx} total={EFFECTS.length} />
       </div>
     );
   };
 
   return (
     <PinnedScrollWrapper id="effects" steps={EFFECTS.length} onProgress={setProgress}>
-      <div 
-        className="h-full flex touch-none" 
-        style={{ 
+      <div
+        className="h-full flex touch-none"
+        style={{
           background: BG,
           width: `${EFFECTS.length * 100}vw`,
           transform: `translateX(${translatePct}%)`,
@@ -625,6 +634,29 @@ export const EffectsSection: React.FC = () => {
       >
         {EFFECTS.map((_, i) => renderEffect(i))}
       </div>
+
+      {/* Vertical progress bar — right edge */}
+      <div className="absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-3 pointer-events-none">
+        {EFFECTS.map((_, i) => (
+          <div
+            key={i}
+            className="w-px transition-all duration-300"
+            style={{
+              height: i === activeIndex ? '24px' : '12px',
+              background: i === activeIndex ? GOLD : GOLD_DIM,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Scroll hint — bottom right */}
+      {progress < 0.05 && (
+        <div className="absolute bottom-8 right-4 md:right-8 z-30 pointer-events-none opacity-40">
+          <span className="font-sans text-[10px] uppercase tracking-[0.2em] text-[var(--color-secondary)]">
+            Scroll to explore
+          </span>
+        </div>
+      )}
     </PinnedScrollWrapper>
   );
 };

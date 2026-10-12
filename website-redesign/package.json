@@ -1,0 +1,24 @@
+{
+  "name": "graffiti-website-redesign",
+  "type": "module",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev --host 127.0.0.1",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check:ui": "node scripts/check-ui.mjs",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/react": "^6.0.4",
+    "astro": "^7.2.9",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.64.0"
+  }
+}
