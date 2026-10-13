@@ -1,0 +1,54 @@
+<div class="download-release">
+  <button class="button button-primary download-trigger" type="button" aria-haspopup="dialog" aria-controls="release-dialog">
+    Browse versions <b aria-hidden="true">↗</b>
+  </button>
+
+  <dialog class="release-dialog" id="release-dialog" aria-labelledby="release-dialog-title">
+    <div class="release-dialog-frame">
+      <header class="release-dialog-header">
+        <div>
+          <p class="utility-index">07 / ACCESS / WINDOWS</p>
+          <h2 id="release-dialog-title">Choose your<br /><span>build.</span></h2>
+        </div>
+        <button class="release-dialog-close" type="button" aria-label="Close version list">×</button>
+      </header>
+
+      <p class="release-dialog-intro">Download the current Graffiti installer or see what is planned for the next version.</p>
+
+      <div class="release-list">
+        <article class="release-card release-card-current">
+          <div class="release-card-topline"><span>VERSION 1.0 / CURRENT</span><strong>STABLE</strong></div>
+          <h3>Graffiti 1.0.0</h3>
+          <p>Windows NSIS installer for the current desktop wallpaper experience.</p>
+          <div class="release-meta"><span>NSIS / WINDOWS</span><span>95.44 MIB</span></div>
+          <a class="button button-primary" href="https://github.com/Klaaav/Graffiti/raw/refs/heads/master/downloads/Graffiti_1.0.0_x64-setup.exe" download="Graffiti_1.0.0_x64-setup.exe">Download Version 1.0 <b aria-hidden="true">↗</b></a>
+        </article>
+
+        <article class="release-card release-card-planned">
+          <div class="release-card-topline"><span>VERSION 1.1 / PLANNED</span><strong>UP NEXT</strong></div>
+          <h3>More ways to shape the scene.</h3>
+          <p>The next update is planned to expand how Graffiti responds and renders.</p>
+          <ul>
+            <li>New cursor-reactive effects</li>
+            <li>Curved shapes in Gallery alongside straight-sided shapes</li>
+            <li>Optional native 3D rendering alongside Web Wallpaper</li>
+          </ul>
+        </article>
+      </div>
+
+      <p class="release-dialog-note">Version 1.0 is the current downloadable build. Planned items are subject to change before release.</p>
+    </div>
+  </dialog>
+</div>
+
+<script>
+  const trigger = document.querySelector<HTMLButtonElement>('.download-trigger');
+  const dialog = document.querySelector<HTMLDialogElement>('#release-dialog');
+  const close = dialog?.querySelector<HTMLButtonElement>('.release-dialog-close');
+
+  trigger?.addEventListener('click', () => dialog?.showModal());
+  close?.addEventListener('click', () => dialog?.close());
+  dialog?.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+</script>

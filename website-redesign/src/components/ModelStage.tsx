@@ -66,7 +66,7 @@ export default function ModelStage() {
       <div className="model-copy">
         <h2 id="model-title">Move through<br /><span>another world.</span></h2>
         <p className="signal-kicker">WEB WALLPAPER MODE</p>
-        <p>Import a GLB model and let it live behind the desktop. Move your cursor across the scene to look around.</p>
+        <p>Import a GLB model and let it live behind the desktop.</p>
         <small>Web Wallpaper renders 3D models in an embedded WebView, which can use more RAM and GPU resources than native image effects.</small>
       </div>
       <div className="model-viewport">

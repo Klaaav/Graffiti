@@ -30,12 +30,12 @@ export default function EffectsStage() {
         <div className="utility-index">02 / EFFECTS</div>
         <h2 id="effects-title">Pick a signal.<br /><span>Wake an image.</span></h2>
         <p className="signal-kicker">LIVE EFFECT LIBRARY</p>
-        <p>Six real demonstrations, arranged as a working queue. Select one to load its recording.</p>
+        <p>Take your wallpaper to a whole new level with six cursor-reactive effects.</p>
       </div>
 
       <div className="effects-console-body">
         <div className="effect-stage-shell">
-          <div className="stage-header"><span>OUTPUT / {String(active + 1).padStart(2, '0')}</span><span>PLAYING LOCALLY</span></div>
+          <div className="stage-header"><span>OUTPUT / {String(active + 1).padStart(2, '0')}</span><span>ACTIVE EFFECT / {name}</span></div>
           <div className="effect-stage">
             {ready && <video key={file} src={`/effects/${encodeURIComponent(file)}`} muted loop playsInline autoPlay preload="metadata" aria-label={`${name} effect demonstration`} />}
             {!ready && <div className="stage-placeholder">Scroll to initialize signal</div>}
@@ -60,7 +60,7 @@ export default function EffectsStage() {
               <span className="queue-arrow" aria-hidden="true">↗</span>
             </button>
           ))}
-          <p className="queue-note">Each clip is loaded when selected.<br />No six-video pile-up.</p>
+          <p className="queue-note">Select a clip to preview it.<br />One effect loads at a time.</p>
         </div>
       </div>
     </section>

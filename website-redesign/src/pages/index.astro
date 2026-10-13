@@ -2,9 +2,10 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import EffectsStage from '../components/EffectsStage';
 import GallerySection from '../components/GallerySection';
-import HeroMotion from '../components/HeroMotion.astro';
+import HeroMotion from '../components/HeroMotionAlt.astro';
 import ModelStage from '../components/ModelStage';
 import FeedbackForm from '../components/FeedbackForm';
+import DownloadModal from '../components/DownloadModal.astro';
 ---
 
 <BaseLayout>
@@ -13,7 +14,6 @@ import FeedbackForm from '../components/FeedbackForm';
       <img src="/logos/logo_transparent.png" alt="Graffiti" />
       <span>GRAFFITI<span class="brand-descriptor"> / WALLPAPER SYSTEM</span></span>
     </a>
-    <div class="signal-status"><i aria-hidden="true"></i> local signal / windows</div>
     <nav aria-label="Primary navigation">
       <a href="#effects">Effects</a>
       <a href="#gallery">Gallery</a>
@@ -26,10 +26,12 @@ import FeedbackForm from '../components/FeedbackForm';
     <section class="hero-transmission" aria-labelledby="hero-title">
       <div class="hero-rail" aria-hidden="true"><span>01</span><span>GRAFFITI</span><span>2026</span></div>
       <div class="hero-brand-zone">
-        <div class="signal-kicker"><span>BOOT SEQUENCE</span><b>READY</b></div>
+        <div class="signal-kicker"><span>A product of Klaav</span></div>
         <img class="hero-logo" src="/logos/logo_transparent.png" alt="Graffiti" />
         <h1 id="hero-title">Make the desktop<br /><span>move.</span></h1>
-        <p class="hero-copy">Bring the wallpaper you already own. Graffiti adds the response: cursor-reactive effects, running locally on your Windows desktop.</p>
+      </div>
+      <div class="hero-detail-zone">
+        <p class="hero-copy">Bring the wallpaper you already own. Graffiti adds cursor-reactive effects, a shape-based Gallery, and 3D wallpapers—all running locally on Windows.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="#effects">Explore effects <b aria-hidden="true">↓</b></a>
           <a class="button button-ghost" href="#download">How to get it <b aria-hidden="true">↘</b></a>
@@ -52,10 +54,15 @@ import FeedbackForm from '../components/FeedbackForm';
     <section id="download" class="utility-section download-module">
       <div class="utility-index">07 / ACCESS</div>
       <div class="utility-main"><h2>Your desktop is<br /><span>waiting.</span></h2><p class="signal-kicker">GET GRAFFITI</p></div>
-      <div class="utility-detail"><p>Graffiti is a Windows desktop application. Import your own wallpaper and give it a cursor-reactive effect.</p><span class="button button-primary is-disabled" aria-disabled="true">Installer destination pending</span><small>The original project does not contain a verified installer or release URL yet. Provide that destination to make this action live.</small></div>
+      <div class="utility-detail"><p>A lightweight Windows app for turning the wallpaper you already own into a responsive desktop scene.</p><DownloadModal /><small>Version 1.0 is available now; planned upgrades are listed alongside the current installer.</small></div>
     </section>
 
     <section id="feedback" class="utility-section feedback-module">
+      <div class="feedback-decor" aria-hidden="true">
+        <i class="feedback-tile feedback-tile-frame"></i>
+        <i class="feedback-tile feedback-tile-bar"></i>
+        <i class="feedback-tile feedback-tile-corner"></i>
+      </div>
       <div class="utility-index">08 / RETURN SIGNAL</div>
       <div class="utility-main"><h2>Leave a<br /><span>trace.</span></h2><p class="signal-kicker">FEEDBACK CHANNEL</p><p class="utility-intro">Questions, rough edges, an effect you want to try. Send a note from the page.</p></div>
       <FeedbackForm client:visible />
@@ -64,7 +71,7 @@ import FeedbackForm from '../components/FeedbackForm';
 
   <footer class="signal-footer">
     <a class="signal-brand" href="#top"><img src="/logos/logo_transparent.png" alt="Graffiti" /><span>GRAFFITI / WALLPAPER SYSTEM</span></a>
-    <p>Made for the wallpaper you already own.</p>
+    <p>A product of Klaav.</p>
     <div><a href="#effects">Effects</a><a href="#gallery">Gallery</a><a href="#download">Download</a><a href="#feedback">Feedback</a></div>
   </footer>
 </BaseLayout>

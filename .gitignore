@@ -67,3 +67,7 @@ website-redesign/node_modules/
 website-redesign/dist/
 website-redesign/.astro/
 
+# Public website download artifact
+!downloads/
+!downloads/*.exe
+

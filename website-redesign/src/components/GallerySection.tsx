@@ -64,7 +64,7 @@ export default function GallerySection() {
             );
           })}
           <img className="resolved-collage" src="/gallery/gallery-687040847e79317109d01c56117af16628f95e6cde2148ec984e09d1b2cee8d9.png" alt="Completed Gallery wallpaper collage" loading="lazy" style={{ opacity: finalOpacity }} />
-          <div className="board-stamp">GRAFFITI<br /><strong>WALLPAPER</strong></div>
+          <div className="board-stamp">GALLERY</div>
         </div>
       </div>
     </section>

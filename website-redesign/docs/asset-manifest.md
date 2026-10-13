@@ -25,9 +25,12 @@ The presentation order is intentionally: **Cursor reveal → Glass lens → Dept
 - The four neighboring source images move into the Gallery composition on scroll, then the supplied collage resolves over them.
 - `public/models/model.glb` is the existing model copied unchanged from the original site's public assets.
 - `public/logos/logo_transparent.png` is the exact existing logo copied unchanged.
+- `public/cursor/taming-arrow-cursor.png` is a cropped, background-removed arrow from the user-supplied Taming IO cursor reference. The title, hand, and footer text from the reference are not used.
 
-The hero uses no supplied wallpaper image. Its original inline SVG cursor sculpture is authored in `src/components/HeroMotion.astro`, with faceted gold/coral planes and small pointer-driven transforms. It is brand illustration rather than a product recording. No Noomo imagery or logo was copied; the supplied Graffiti logo remains unchanged.
+The hero uses no supplied wallpaper image. Its alternate signal poster is authored in `src/components/HeroMotionAlt.astro`, with a vertical hollow GRAFFITI outline, a faint gold echo, a small reticle, and a restrained pointer-driven trace. It is brand illustration rather than a product recording. No Noomo imagery or logo was copied; the supplied Graffiti logo remains unchanged.
 
 ## Verified destinations
 
-The original project did not contain a working installer URL or feedback endpoint. The Download section stays visibly pending rather than inventing a destination or version. Feedback is intentionally local-only and never displays a remote success state.
+- `downloads/Graffiti_1.0.0_x64-setup.exe` is the tracked Version 1.0 NSIS installer, copied from the Tauri release bundle. Its measured size is 100,073,110 bytes (95.44 MiB / 100.07 MB).
+- The website's Version 1.0 download link points to `https://github.com/Klaaav/Graffiti/raw/refs/heads/master/downloads/Graffiti_1.0.0_x64-setup.exe`.
+- Feedback remains intentionally local-only and never displays a remote success state.

@@ -1,0 +1,25 @@
+<img class="site-cursor" src="/cursor/taming-arrow-cursor.png" alt="" aria-hidden="true" />
+
+<script>
+  const cursor = document.querySelector<HTMLElement>('.site-cursor');
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  if (cursor && finePointer.matches && !reducedMotion.matches) {
+    let frame = 0;
+    let x = -100;
+    let y = -100;
+    const render = () => {
+      cursor.style.transform = `translate3d(${x}px, ${y}px, 0) scale(var(--cursor-scale))`;
+      frame = 0;
+    };
+    window.addEventListener('pointermove', (event) => {
+      x = event.clientX;
+      y = event.clientY;
+      if (!frame) frame = requestAnimationFrame(render);
+    }, { passive: true });
+    document.querySelectorAll<HTMLElement>('a, button, select, textarea, [role="button"]').forEach((element) => {
+      element.addEventListener('pointerenter', () => cursor.classList.add('is-over-control'));
+      element.addEventListener('pointerleave', () => cursor.classList.remove('is-over-control'));
+    });
+  }
+</script>
