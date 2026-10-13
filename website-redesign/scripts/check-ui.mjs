@@ -173,6 +173,14 @@ try {
     assert.equal(await page.locator('#release-dialog').getByText('Optional native 3D rendering alongside Web Wallpaper', { exact: true }).count(), 1, 'Native 3D rendering is listed as planned.');
     assert.equal(await page.locator('#release-dialog').getByText('New cursor-reactive effects', { exact: true }).count(), 1, 'New effects are listed as planned.');
     assert.equal(await page.locator('#release-dialog a[download]').getAttribute('href'), installerURL, 'Version 1.0 points to the repository installer.');
+    if (scenario.reducedMotion !== 'reduce' && !scenario.hasTouch) {
+      const dialogBounds = await page.locator('#release-dialog').boundingBox();
+      const pointerTarget = { x: dialogBounds.x + 80, y: dialogBounds.y + 170 };
+      await page.mouse.move(pointerTarget.x, pointerTarget.y);
+      await page.waitForTimeout(100);
+      const cursorPosition = await page.locator('.site-cursor').evaluate(node => { const rect = node.getBoundingClientRect(); return { left: rect.left, top: rect.top }; });
+      assert.ok(Math.abs(cursorPosition.left - pointerTarget.x) <= 1.5 && Math.abs(cursorPosition.top - pointerTarget.y) <= 1.5, `Custom cursor tracks the native pointer in the popup: ${JSON.stringify({ pointerTarget, cursorPosition })}`);
+    }
     await page.getByRole('button', { name: 'Close version list' }).click();
     assert.equal(await page.locator('#release-dialog[open]').count(), 0, 'The version popup closes.');
     await page.locator('#download').screenshot({ path: capturePath(`${scenario.name}-download.png`) });

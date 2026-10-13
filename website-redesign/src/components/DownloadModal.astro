@@ -45,9 +45,16 @@
   const trigger = document.querySelector<HTMLButtonElement>('.download-trigger');
   const dialog = document.querySelector<HTMLDialogElement>('#release-dialog');
   const close = dialog?.querySelector<HTMLButtonElement>('.release-dialog-close');
+  const cursor = document.querySelector<HTMLElement>('.site-cursor');
 
-  trigger?.addEventListener('click', () => dialog?.showModal());
+  trigger?.addEventListener('click', () => {
+    dialog?.showModal();
+    if (dialog && cursor) dialog.appendChild(cursor);
+  });
   close?.addEventListener('click', () => dialog?.close());
+  dialog?.addEventListener('close', () => {
+    if (cursor) document.body.appendChild(cursor);
+  });
   dialog?.addEventListener('click', (event) => {
     if (event.target === dialog) dialog.close();
   });

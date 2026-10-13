@@ -148,6 +148,7 @@ All primary controls, panels, and sections use square corners (`0px`). Borders a
 
 ### Cursor
 - A cropped, transparent arrow from the supplied Taming IO cursor reference follows a fine pointer and gains a restrained coral hard-shadow over controls. It is disabled for touch and reduced-motion contexts.
+- Its position has no transition lag, and it moves into the release dialog's top layer while the version popup is open so it remains visible over the modal.
 
 ### Inputs / Fields
 - **Style:** transparent fields with 2px bottom rules, monospace labels, and no rounded shells.
