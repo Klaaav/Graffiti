@@ -25,6 +25,7 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.64.6",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
