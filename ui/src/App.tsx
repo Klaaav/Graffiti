@@ -91,16 +91,18 @@ function App() {
         </div>
       )}
 
-      <nav className="sidebar">
+      <nav className="sidebar" aria-label="Main navigation">
         <div className="sidebar-brand-area">
           <img
             src="/logos/Graffiti_New_Logo_Transparent.png"
             alt="Graffiti"
             className="sidebar-brand"
           />
+          <span className="sidebar-instance">Your wallpaper workspace</span>
         </div>
 
         <div className="sidebar-nav">
+          <div className="nav-section-label">Studio</div>
           <NavLink to="/effects" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <Sparkles />
             <span className="nav-label">Effects</span>
@@ -111,9 +113,10 @@ function App() {
           </NavLink>
           <NavLink to="/web-wallpaper" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <Box />
-            <span className="nav-label">3D Web Wallpaper</span>
+            <span className="nav-label">3D Wallpaper</span>
           </NavLink>
           <div className="sidebar-nav-divider" />
+          <div className="nav-section-label">System</div>
           <NavLink to="/settings" className={({isActive}) => `nav-link ${isActive ? 'active' : ''}`}>
             <SlidersHorizontal />
             <span className="nav-label">Settings</span>
@@ -124,7 +127,10 @@ function App() {
           </NavLink>
         </div>
 
-        <span className="sidebar-version">v1.0.0</span>
+        <div className="sidebar-footer">
+          <span className="sidebar-local">Everything stays on this device.</span>
+          <span className="sidebar-version">v1.0.0</span>
+        </div>
       </nav>
 
       <main className="content">

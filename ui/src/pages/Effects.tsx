@@ -860,6 +860,11 @@ export default function Effects() {
       {/* Header */}
       <div className="effects-header">
         <h2 className="effects-header-title">Effects Studio</h2>
+        <div className="effects-metrics" aria-label="Engine summary">
+          <div className="effects-metric"><span>Mode</span><strong>Native GPU</strong></div>
+          <div className="effects-metric"><span>Effects</span><strong>06 ready</strong></div>
+          <div className="effects-metric effects-metric-live"><span>Engine</span><strong><i /> Ready</strong></div>
+        </div>
         <span className="effects-header-quote">"Same wallpaper.<br />A different world."</span>
       </div>
 
@@ -876,6 +881,16 @@ export default function Effects() {
         <div className="effects-controls-panel">
           {renderQualityStrip()}
           {renderActiveEffectControls()}
+          <div className="effects-action-dock">
+            {renderActivateButton()}
+            <button
+              className="effects-stop-btn"
+              onClick={handleRemoveEffect}
+              disabled={!activeEffect}
+            >
+              Stop Effect
+            </button>
+          </div>
         </div>
 
         {/* Col 3 (right): description, centered */}

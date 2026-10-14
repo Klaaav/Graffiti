@@ -8,7 +8,7 @@ import PreviewCanvas from './PreviewCanvas';
 export default function WebWallpaper() {
     const [modelPath, setModelPath] = useState<string | null>(null);
     const [bgType, setBgType] = useState<'color' | 'image'>('color');
-    const [bgColor, setBgColor] = useState<string>('#1a1a2e');
+    const [bgColor, setBgColor] = useState<string>('#b9bdb5');
     const [bgImage, setBgImage] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 

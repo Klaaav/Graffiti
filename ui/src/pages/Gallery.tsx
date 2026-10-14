@@ -297,7 +297,7 @@ export default function Gallery() {
           }
         } else {
           // Placeholder fill if no image
-          ctx.fillStyle = shape.id === selectedShapeId ? 'rgba(0, 240, 255, 0.2)' : 'rgba(255, 255, 255, 0.1)';
+          ctx.fillStyle = shape.id === selectedShapeId ? 'rgba(239, 255, 27, 0.24)' : 'rgba(248, 249, 244, 0.28)';
           ctx.fill();
         }
 
@@ -312,7 +312,7 @@ export default function Gallery() {
         }
         ctx.closePath();
         ctx.lineWidth = shape.id === selectedShapeId ? 3 : 1;
-        ctx.strokeStyle = shape.id === selectedShapeId ? '#00F0FF' : 'rgba(255, 255, 255, 0.5)';
+        ctx.strokeStyle = shape.id === selectedShapeId ? '#efff1b' : 'rgba(248, 249, 244, 0.64)';
         ctx.stroke();
 
         // Draw vertices for selected shape to allow dragging
@@ -323,7 +323,7 @@ export default function Gallery() {
             ctx.arc(vx, vy, 5, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
             ctx.fill();
-            ctx.strokeStyle = '#00F0FF';
+            ctx.strokeStyle = '#efff1b';
             ctx.lineWidth = 2;
             ctx.stroke();
           });
@@ -333,7 +333,7 @@ export default function Gallery() {
       // 3. Draw Snapping Indicators
       if (previewCursor && (previewCursor.snapX || previewCursor.snapY) && (editorState === 'DRAWING' || dragRef.current?.active)) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(0, 240, 255, 0.8)';
+        ctx.strokeStyle = 'rgba(239, 255, 27, 0.86)';
         ctx.lineWidth = 2;
         ctx.beginPath();
         const px = previewCursor.x * cw;
@@ -348,7 +348,7 @@ export default function Gallery() {
         }
         ctx.stroke();
 
-        ctx.fillStyle = 'rgba(0, 240, 255, 1)';
+        ctx.fillStyle = 'rgba(239, 255, 27, 1)';
         ctx.beginPath();
         ctx.arc(px, py, 5, 0, Math.PI * 2);
         ctx.fill();
@@ -365,7 +365,7 @@ export default function Gallery() {
           ctx.lineTo(pt[0], pt[1]);
 
           // Draw vertex points
-          ctx.fillStyle = '#00F0FF';
+          ctx.fillStyle = '#efff1b';
           ctx.fillRect(pt[0] - 4, pt[1] - 4, 8, 8);
         }
         // Draw line to preview cursor
@@ -373,11 +373,11 @@ export default function Gallery() {
           const pt = toPx(previewCursor.x, previewCursor.y);
           ctx.lineTo(pt[0], pt[1]);
         }
-        ctx.fillStyle = '#00F0FF';
+        ctx.fillStyle = '#efff1b';
         ctx.fillRect(start[0] - 4, start[1] - 4, 8, 8);
 
         ctx.lineWidth = 2;
-        ctx.strokeStyle = '#00F0FF';
+        ctx.strokeStyle = '#efff1b';
         ctx.setLineDash([5, 5]);
         ctx.stroke();
         ctx.setLineDash([]);

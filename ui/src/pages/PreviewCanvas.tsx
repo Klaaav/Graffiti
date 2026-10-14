@@ -157,7 +157,7 @@ export default function PreviewCanvas({ modelPath, bgType, bgColor, bgImage, zoo
     }, []);
 
     return (
-        <div style={{ width: '100%', height: '400px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color)', position: 'relative', backgroundColor: '#000', marginBottom: '1.5rem' }}>
+        <div style={{ width: '100%', height: '400px', borderRadius: '20px', overflow: 'hidden', border: '0', position: 'relative', backgroundColor: '#1b1d1b', marginBottom: '1.5rem' }}>
             <Canvas camera={{ position: [0, 0, 3], fov: 75 }}>
                 <ambientLight intensity={0.6} />
                 <directionalLight position={[0, 0, 1]} intensity={1.2} />
@@ -179,7 +179,7 @@ export default function PreviewCanvas({ modelPath, bgType, bgColor, bgImage, zoo
                 />
             </Canvas>
 
-            <div style={{ position: 'absolute', bottom: '10px', left: '10px', backgroundColor: 'rgba(0,0,0,0.6)', padding: '6px 10px', borderRadius: '4px', color: '#fff', fontSize: '12px', pointerEvents: 'none' }}>
+            <div style={{ position: 'absolute', bottom: '10px', left: '10px', backgroundColor: 'rgba(27,29,27,0.78)', padding: '6px 10px', borderRadius: '999px', color: '#f8f9f4', fontSize: '12px', pointerEvents: 'none' }}>
                 <strong>Left Click:</strong> Rotate
             </div>
 
