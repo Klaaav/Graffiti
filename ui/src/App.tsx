@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { enable as enableAuto, disable as disableAuto, isEnabled as isAutoEnabled } from '@tauri-apps/plugin-autostart';
+import PreviewCanvas from './pages/PreviewCanvas';
 import './index.css';
 
 import {
@@ -160,6 +161,10 @@ export default function App() {
     { id: 2, title: 'Dual Diagonal Mask', date: 'Saved Yesterday', color: '#84f5d5', points: [{ x: 60, y: 60 }, { x: 620, y: 80 }, { x: 580, y: 410 }, { x: 90, y: 390 }] },
     { id: 3, title: 'Minimalist Center Frame', date: 'Saved 3 days ago', color: '#ffffff', points: [{ x: 180, y: 110 }, { x: 520, y: 110 }, { x: 520, y: 370 }, { x: 180, y: 370 }] }
   ]);
+
+  // Hidden file input refs for browser & Tauri file selection
+  const glbFileInputRef = useRef<HTMLInputElement | null>(null);
+  const bgImageFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // 1. Initial Launch & Session Restore
   useEffect(() => {
@@ -358,9 +363,32 @@ export default function App() {
       if (typeof selected === 'string') {
         const imported = await importWebAsset(selected);
         setWebModelPath(imported);
+        return;
       }
     } catch (err) {
-      console.error('Failed to import model:', err);
+      console.warn('Tauri dialog not available or cancelled, opening file input:', err);
+    }
+    if (glbFileInputRef.current) {
+      glbFileInputRef.current.click();
+    }
+  };
+
+  const handleImportBgImage = async () => {
+    try {
+      const selected = await open({
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        multiple: false,
+      });
+      if (typeof selected === 'string') {
+        const imported = await importWebAsset(selected);
+        setWebBgImage(imported);
+        return;
+      }
+    } catch (err) {
+      console.warn('Tauri dialog not available, opening file input:', err);
+    }
+    if (bgImageFileInputRef.current) {
+      bgImageFileInputRef.current.click();
     }
   };
 
@@ -871,16 +899,43 @@ export default function App() {
       {/* ================= POPUP 3: WEB WALLPAPER ================= */}
       {openModal === 'modal-web' && (
         <div className="modal-backdrop">
-          <div className="popup-window">
+          <div className="popup-window large" style={{ maxWidth: '1040px' }}>
             <div className="popup-top-bar">
               <h2>Set 3D Web Wallpaper Model</h2>
               <button className="close-circle-x" onClick={() => setOpenModal(null)}>✕</button>
             </div>
 
-            <div className="canvas-workspace-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Hidden file inputs for web/desktop fallback */}
+            <input
+              type="file"
+              ref={glbFileInputRef}
+              accept=".glb,.gltf"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  const url = URL.createObjectURL(e.target.files[0]);
+                  setWebModelPath(url);
+                }
+              }}
+            />
+            <input
+              type="file"
+              ref={bgImageFileInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  const url = URL.createObjectURL(e.target.files[0]);
+                  setWebBgImage(url);
+                }
+              }}
+            />
+
+            <div className="canvas-workspace-grid" style={{ gridTemplateColumns: '320px 1fr', gap: '24px', alignItems: 'stretch' }}>
+              {/* Left Column: Controls & Settings */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', overflowY: 'auto', paddingRight: '4px' }}>
                 <button className="pill-select-btn" onClick={handleImportGlb}>
-                  <span>{webModelPath ? webModelPath.split('\\').pop() : 'Import .GLB Model…'}</span>
+                  <span style={{ fontWeight: 700 }}>{webModelPath ? webModelPath.split(/[\/\\]/).pop() : 'Import .GLB Model…'}</span>
                   <span className="caret">Browse</span>
                 </button>
 
@@ -888,35 +943,80 @@ export default function App() {
                   <h4>Background Type</h4>
                   <div className="control-row-split">
                     <button
+                      type="button"
                       className={`pill-select-btn ${webBgType === 'color' ? 'active' : ''}`}
                       onClick={() => setWebBgType('color')}
                     >
                       Solid
                     </button>
                     <button
+                      type="button"
                       className={`pill-select-btn ${webBgType === 'image' ? 'active' : ''}`}
                       onClick={() => setWebBgType('image')}
                     >
                       Image
                     </button>
                   </div>
+
                   {webBgType === 'color' ? (
-                    <input
-                      type="color"
-                      value={webBgColor}
-                      onChange={(e) => setWebBgColor(e.target.value)}
-                      style={{ width: '100%', height: '36px', border: 'none', borderRadius: '8px' }}
-                    />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <input
+                          type="color"
+                          value={webBgColor}
+                          onChange={(e) => setWebBgColor(e.target.value)}
+                          style={{
+                            width: '42px',
+                            height: '36px',
+                            border: '1px solid var(--border-soft)',
+                            borderRadius: '10px',
+                            cursor: 'pointer',
+                            background: 'transparent',
+                            padding: 0,
+                          }}
+                        />
+                        <span style={{ fontFamily: 'monospace', fontSize: '0.86rem', fontWeight: 600, color: 'var(--text-dark)' }}>
+                          {webBgColor}
+                        </span>
+                      </div>
+                      {/* Color Presets */}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Presets:</span>
+                        {['#111311', '#1a1a2e', '#b6beb7', '#f4f6f4', '#dfff4f'].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setWebBgColor(preset)}
+                            style={{
+                              width: '20px',
+                              height: '20px',
+                              borderRadius: '50%',
+                              background: preset,
+                              border: webBgColor === preset ? '2px solid var(--text-dark)' : '1px solid var(--border-soft)',
+                              cursor: 'pointer',
+                            }}
+                            title={preset}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   ) : (
-                    <button className="pill-select-btn" onClick={async () => {
-                      const sel = await open({ filters: [{ name: 'Images', extensions: ['png', 'jpg'] }] });
-                      if (typeof sel === 'string') {
-                        const imp = await importWebAsset(sel);
-                        setWebBgImage(imp);
-                      }
-                    }}>
-                      <span>{webBgImage ? webBgImage.split('\\').pop() : 'Browse Background…'}</span>
-                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                      <button type="button" className="pill-select-btn" onClick={handleImportBgImage}>
+                        <span>{webBgImage ? webBgImage.split(/[\/\\]/).pop() : 'Browse Background Image…'}</span>
+                        <span className="caret">Browse</span>
+                      </button>
+                      {webBgImage && (
+                        <button
+                          type="button"
+                          className="btn-outline-pill"
+                          style={{ padding: '4px 10px', fontSize: '0.72rem', alignSelf: 'flex-start' }}
+                          onClick={() => setWebBgImage(null)}
+                        >
+                          Clear Image
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -941,17 +1041,25 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', background: '#181a18', borderRadius: '22px', padding: '24px', color: '#fff' }}>
-                <div style={{ fontSize: '0.8rem', opacity: 0.7 }}>Interactive Viewport Preview</div>
-                <div style={{ textAlign: 'center', margin: 'auto 0' }}>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--highlight)' }}>
-                    {webModelPath ? webModelPath.split('\\').pop() : 'No .GLB Model Selected'}
-                  </div>
-                  <p style={{ fontSize: '0.78rem', opacity: 0.6, marginTop: '6px' }}>Left-click + drag to test rotation</p>
+              {/* Right Column: Live 3D Viewport Preview */}
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '14px', minHeight: '440px' }}>
+                <div style={{ flex: 1, minHeight: '380px', position: 'relative', borderRadius: '22px', overflow: 'hidden' }}>
+                  <PreviewCanvas
+                    modelPath={webModelPath}
+                    bgType={webBgType}
+                    bgColor={webBgColor}
+                    bgImage={webBgImage}
+                    zoomFactor={webZoom}
+                    offsetX={webHOff}
+                    offsetY={webVOff}
+                    rotationFactor={webSens}
+                    enableVerticalRotation={true}
+                    style={{ width: '100%', height: '100%', minHeight: '380px', borderRadius: '22px' }}
+                  />
                 </div>
                 <button
                   className="btn-dark-pill"
-                  style={{ background: 'var(--highlight)', color: 'var(--text-dark)', width: '100%' }}
+                  style={{ background: 'var(--highlight)', color: 'var(--text-dark)', width: '100%', padding: '14px', fontSize: '0.92rem' }}
                   onClick={handleActivate3D}
                 >
                   Activate 3D Wallpaper

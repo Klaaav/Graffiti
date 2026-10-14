@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef, useState, useCallback, Component } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -14,11 +14,49 @@ interface PreviewCanvasProps {
     zoomFactor: number;
     offsetX: number;
     offsetY: number;
-    onRotationUpdate: (initialRotationX: number, initialRotationY: number) => void;
+    onRotationUpdate?: (initialRotationX: number, initialRotationY: number) => void;
+    style?: React.CSSProperties;
+    className?: string;
 }
 
-function Model({ url, onModelLoaded }: { url: string, onModelLoaded: (size: number, center: THREE.Vector3) => void }) {
-    const assetUrl = convertFileSrc(url);
+function safeAssetUrl(path: string | null): string {
+    if (!path) return '';
+    if (path.startsWith('blob:') || path.startsWith('http:') || path.startsWith('https:') || path.startsWith('data:') || path.startsWith('/')) {
+        return path;
+    }
+    try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+            return convertFileSrc(path);
+        }
+    } catch {
+        // Fallback in browser
+    }
+    return path;
+}
+
+class ModelErrorBoundary extends Component<{ fallback: React.ReactNode; children: React.ReactNode }, { hasError: boolean }> {
+    state = { hasError: false };
+    static getDerivedStateFromError() {
+        return { hasError: true };
+    }
+    componentDidCatch(err: any) {
+        console.warn('3D Model failed to render:', err);
+    }
+    componentDidUpdate(prevProps: { children: React.ReactNode }) {
+        if (prevProps.children !== this.props.children && this.state.hasError) {
+            this.setState({ hasError: false });
+        }
+    }
+    render() {
+        if (this.state.hasError) {
+            return this.props.fallback;
+        }
+        return this.props.children;
+    }
+}
+
+function Model({ url, onModelLoaded }: { url: string; onModelLoaded: (size: number, center: THREE.Vector3) => void }) {
+    const assetUrl = safeAssetUrl(url);
     const { scene } = useGLTF(assetUrl);
 
     useEffect(() => {
@@ -33,33 +71,52 @@ function Model({ url, onModelLoaded }: { url: string, onModelLoaded: (size: numb
     return <primitive object={scene} />;
 }
 
-function SceneSetup({ bgType, bgColor, bgImage }: { bgType: 'color' | 'image', bgColor: string, bgImage: string | null }) {
+function SceneSetup({ bgType, bgColor, bgImage }: { bgType: 'color' | 'image'; bgColor: string; bgImage: string | null }) {
     const { scene } = useThree();
 
     useEffect(() => {
         if (bgType === 'color') {
-            scene.background = new THREE.Color(bgColor);
+            scene.background = new THREE.Color(bgColor || '#111311');
         } else if (bgType === 'image' && bgImage) {
-            const assetUrl = convertFileSrc(bgImage);
-            new THREE.TextureLoader().load(assetUrl, (tex) => {
-                tex.colorSpace = THREE.SRGBColorSpace;
-                scene.background = tex;
-            });
+            const assetUrl = safeAssetUrl(bgImage);
+            const loader = new THREE.TextureLoader();
+            loader.load(
+                assetUrl,
+                (tex) => {
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    scene.background = tex;
+                },
+                undefined,
+                () => {
+                    scene.background = new THREE.Color(bgColor || '#111311');
+                }
+            );
+        } else {
+            scene.background = new THREE.Color(bgColor || '#111311');
         }
     }, [bgType, bgColor, bgImage, scene]);
 
     return null;
 }
 
-function CameraControls({ onRotationUpdate, modelSize, modelCenter, zoomFactor, offsetX, offsetY, rotationFactor, enableVerticalRotation }: {
-    onRotationUpdate: PreviewCanvasProps['onRotationUpdate'],
-    modelSize: number,
-    modelCenter: THREE.Vector3 | null,
-    zoomFactor: number,
-    offsetX: number,
-    offsetY: number,
-    rotationFactor: number,
-    enableVerticalRotation: boolean
+function CameraControls({
+    onRotationUpdate,
+    modelSize,
+    modelCenter,
+    zoomFactor,
+    offsetX,
+    offsetY,
+    rotationFactor,
+    enableVerticalRotation,
+}: {
+    onRotationUpdate?: (rx: number, ry: number) => void;
+    modelSize: number;
+    modelCenter: THREE.Vector3 | null;
+    zoomFactor: number;
+    offsetX: number;
+    offsetY: number;
+    rotationFactor: number;
+    enableVerticalRotation: boolean;
 }) {
     const { camera, scene, gl } = useThree();
     const targetRot = useRef({ x: 0, y: 0 });
@@ -76,7 +133,7 @@ function CameraControls({ onRotationUpdate, modelSize, modelCenter, zoomFactor, 
             camera.position.copy(modelCenter);
             camera.position.x -= xOffsetVal;
             camera.position.y -= yOffsetVal;
-            camera.position.z += modelSize * (1.0 / zoomFactor);
+            camera.position.z += modelSize * (1.0 / (zoomFactor || 1.0));
 
             const target = modelCenter.clone();
             target.x -= xOffsetVal;
@@ -108,8 +165,6 @@ function CameraControls({ onRotationUpdate, modelSize, modelCenter, zoomFactor, 
                     targetRot.current.x += deltaY * 0.01 * rotationFactor;
                 }
 
-                // Apply rotation directly to the scene children (our model)
-                // We rotate around the world origin (0,0,0) just like the backend does.
                 scene.children.forEach(child => {
                     if (child.type === 'Group' || child.type === 'Scene') {
                         child.rotation.x = targetRot.current.x;
@@ -123,11 +178,15 @@ function CameraControls({ onRotationUpdate, modelSize, modelCenter, zoomFactor, 
 
         const handlePointerUp = (e: PointerEvent) => {
             if (e.button === 0) {
-                if (isDragging) {
+                if (isDragging && onRotationUpdate) {
                     onRotationUpdate(targetRot.current.x, targetRot.current.y);
                 }
                 isDragging = false;
-                dom.releasePointerCapture(e.pointerId);
+                try {
+                    dom.releasePointerCapture(e.pointerId);
+                } catch {
+                    // Ignore release error if capture was lost
+                }
             }
         };
 
@@ -147,25 +206,54 @@ function CameraControls({ onRotationUpdate, modelSize, modelCenter, zoomFactor, 
     return null;
 }
 
-export default function PreviewCanvas({ modelPath, bgType, bgColor, bgImage, zoomFactor, offsetX, offsetY, onRotationUpdate, enableVerticalRotation, rotationFactor }: PreviewCanvasProps) {
-    const [modelSize, setModelSize] = React.useState(0);
-    const [modelCenter, setModelCenter] = React.useState<THREE.Vector3 | null>(null);
+export default function PreviewCanvas({
+    modelPath,
+    bgType,
+    bgColor,
+    bgImage,
+    zoomFactor,
+    offsetX,
+    offsetY,
+    onRotationUpdate,
+    enableVerticalRotation = true,
+    rotationFactor = 0.2,
+    style,
+    className,
+}: PreviewCanvasProps) {
+    const [modelSize, setModelSize] = useState(0);
+    const [modelCenter, setModelCenter] = useState<THREE.Vector3 | null>(null);
 
-    const handleModelLoaded = React.useCallback((size: number, center: THREE.Vector3) => {
+    const handleModelLoaded = useCallback((size: number, center: THREE.Vector3) => {
         setModelSize(size);
         setModelCenter(center);
     }, []);
 
     return (
-        <div style={{ width: '100%', height: '400px', borderRadius: '20px', overflow: 'hidden', border: '0', position: 'relative', backgroundColor: '#1b1d1b', marginBottom: '1.5rem' }}>
-            <Canvas camera={{ position: [0, 0, 3], fov: 75 }}>
-                <ambientLight intensity={0.6} />
-                <directionalLight position={[0, 0, 1]} intensity={1.2} />
+        <div
+            className={className}
+            style={{
+                width: '100%',
+                height: '100%',
+                minHeight: '360px',
+                borderRadius: '22px',
+                overflow: 'hidden',
+                position: 'relative',
+                backgroundColor: bgType === 'color' ? bgColor : '#111311',
+                boxShadow: 'inset 0 0 0 1px var(--border-soft)',
+                ...style,
+            }}
+        >
+            <Canvas camera={{ position: [0, 0, 3], fov: 60 }}>
+                <ambientLight intensity={0.9} />
+                <directionalLight position={[5, 8, 5]} intensity={1.5} />
+                <directionalLight position={[-5, -4, -3]} intensity={0.5} />
                 <SceneSetup bgType={bgType} bgColor={bgColor} bgImage={bgImage} />
 
-                <Suspense fallback={null}>
-                    {modelPath && <Model url={modelPath} onModelLoaded={handleModelLoaded} />}
-                </Suspense>
+                <ModelErrorBoundary fallback={null}>
+                    <Suspense fallback={null}>
+                        {modelPath && <Model key={modelPath} url={modelPath} onModelLoaded={handleModelLoaded} />}
+                    </Suspense>
+                </ModelErrorBoundary>
 
                 <CameraControls
                     onRotationUpdate={onRotationUpdate}
@@ -179,13 +267,52 @@ export default function PreviewCanvas({ modelPath, bgType, bgColor, bgImage, zoo
                 />
             </Canvas>
 
-            <div style={{ position: 'absolute', bottom: '10px', left: '10px', backgroundColor: 'rgba(27,29,27,0.78)', padding: '6px 10px', borderRadius: '999px', color: '#f8f9f4', fontSize: '12px', pointerEvents: 'none' }}>
-                <strong>Left Click:</strong> Rotate
+            {/* Hint Badge */}
+            <div
+                style={{
+                    position: 'absolute',
+                    bottom: '12px',
+                    left: '12px',
+                    backgroundColor: 'rgba(17, 19, 17, 0.85)',
+                    backdropFilter: 'blur(6px)',
+                    padding: '5px 12px',
+                    borderRadius: '999px',
+                    color: '#f4f6f4',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    pointerEvents: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                }}
+            >
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--highlight)' }} />
+                <span>Drag to Orbit · Scroll to Zoom</span>
             </div>
 
+            {/* Empty State */}
             {!modelPath && (
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)', pointerEvents: 'none' }}>
-                    Select a 3D model to preview
+                <div
+                    style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'var(--text-dark)',
+                        pointerEvents: 'none',
+                        background: 'rgba(255,255,255,0.1)',
+                        backdropFilter: 'blur(2px)',
+                    }}
+                >
+                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-dark)' }}>
+                        No 3D Model Selected
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        Import a .glb / .gltf file to preview
+                    </p>
                 </div>
             )}
         </div>
