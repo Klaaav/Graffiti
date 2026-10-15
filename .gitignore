@@ -50,6 +50,8 @@ temp_font.ttf
 # Font archives (assets stored elsewhere)
 BodoniModa.zip
 BodoniModa-Variable.ttf
+!ui/public/fonts/
+!ui/public/fonts/BodoniModa-Variable.ttf
 
 # Screenshots / session captures
 App_UI_SS/
@@ -70,4 +72,3 @@ website-redesign/.astro/
 # Public website download artifact
 !downloads/
 !downloads/*.exe
-
