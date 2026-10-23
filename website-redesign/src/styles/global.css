@@ -213,8 +213,10 @@ img, video { display: block; max-width: 100%; }
 .utility-detail { align-self: end; max-width: 410px; }
 .utility-detail > p { margin: 0 0 28px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 .utility-detail small { display: block; max-width: 340px; margin-top: 18px; color: var(--muted); font-size: 10px; line-height: 1.6; }
-.download-release { display: inline-block; }
-.download-trigger { border-color: var(--void); background: var(--void); color: var(--gold-light); }
+.download-release { display: inline-block; max-width: 100%; }
+.download-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.download-actions .button { white-space: nowrap; }
+.download-trigger { border-color: var(--void); background: transparent; color: var(--void); }
 .download-trigger::before { background: var(--coral); }
 .download-trigger:hover, .download-trigger:focus-visible { border-color: var(--void); background: var(--void); color: var(--ivory); }
 .release-dialog { width: min(900px, calc(100vw - 36px)); max-width: none; max-height: min(88svh, 780px); margin: auto; padding: 0; border: 2px solid var(--gold); background: var(--void); color: var(--ivory); }

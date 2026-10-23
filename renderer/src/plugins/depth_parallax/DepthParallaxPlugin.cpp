@@ -20,6 +20,7 @@ static ID3D11Texture2D*          g_BaseTex = nullptr;
 static ID3D11ShaderResourceView* g_BaseSRV = nullptr;
 static ID3D11Texture2D*          g_DepthTex = nullptr;
 static ID3D11ShaderResourceView* g_DepthSRV = nullptr;
+static bool                       g_depthReady = false;
 
 static ID3D11SamplerState*       g_Sampler = nullptr;
 static ID3D11BlendState*         g_BlendOpaque = nullptr;
@@ -113,7 +114,7 @@ void DP_Render() {
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (SUCCEEDED(g_ctx->context->Map(g_ParallaxCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
         ParallaxConstantBuffer cb = g_cbData;
-        if (!g_DepthSRV) {
+        if (!g_depthReady || !g_DepthSRV) {
             cb.parallaxStrength = 0.0f; // Graceful fallback: flat image
         }
         memcpy(mapped.pData, &cb, sizeof(ParallaxConstantBuffer));
@@ -156,6 +157,7 @@ void DP_Shutdown() {
     if (g_BaseSRV) { g_BaseSRV->Release(); g_BaseSRV = nullptr; }
     if (g_DepthTex) { g_DepthTex->Release(); g_DepthTex = nullptr; }
     if (g_DepthSRV) { g_DepthSRV->Release(); g_DepthSRV = nullptr; }
+    g_depthReady = false;
 
     if (g_FullscreenVS) { g_FullscreenVS->Release(); g_FullscreenVS = nullptr; }
     if (g_DepthParallaxPS) { g_DepthParallaxPS->Release(); g_DepthParallaxPS = nullptr; }
@@ -191,15 +193,27 @@ void DP_OnWallpaperChanged(const WallpaperLayers* layers) {
     std::string pathA = (layers->imagePathA) ? layers->imagePathA : "";
     std::string pathB = (layers->imagePathB) ? layers->imagePathB : "";
 
-    if (!pathA.empty()) {
-        WICLoader::LoadTexture(g_ctx->device, pathA, g_ctx->processingWidth, g_ctx->processingHeight, &g_BaseTex, &g_BaseSRV);
+    const bool baseReady = !pathA.empty() && WICLoader::LoadTexture(
+        g_ctx->device,
+        pathA,
+        g_ctx->processingWidth,
+        g_ctx->processingHeight,
+        &g_BaseTex,
+        &g_BaseSRV);
+    const bool depthReady = !pathB.empty() && WICLoader::LoadTexture(
+        g_ctx->device,
+        pathB,
+        g_ctx->processingWidth,
+        g_ctx->processingHeight,
+        &g_DepthTex,
+        &g_DepthSRV);
+    g_depthReady = baseReady && depthReady && g_BaseSRV && g_DepthSRV;
+
+    std::cout << "[DepthParallax] Base texture: " << (baseReady ? "ready" : "FAILED")
+              << ", depth texture: " << (depthReady ? "ready" : "FAILED") << "\n";
+    if (!g_depthReady) {
+        std::cout << "[DepthParallax] No valid depth map is bound; rendering a flat fallback until a valid map is supplied.\n";
     }
-    
-    if (!pathB.empty()) {
-        WICLoader::LoadTexture(g_ctx->device, pathB, g_ctx->processingWidth, g_ctx->processingHeight, &g_DepthTex, &g_DepthSRV);
-    }
-    
-    std::cout << "[DepthParallax] Loaded wallpapers: " << pathA << " and " << pathB << "\n";
 }
 
 void DP_OnMonitorChanged(const MonitorInfo* info) {}

@@ -251,13 +251,17 @@ void PowerManager::Update() {
     }
 }
 
-bool PowerManager::ShouldRenderFrame(int currentFpsCap) {
-    if (s_currentState == POWER_STATE_HIDDEN_OCCLUDED ||
+bool PowerManager::IsPaused() {
+    return s_currentState == POWER_STATE_HIDDEN_OCCLUDED ||
         s_currentState == POWER_STATE_HIDDEN_FULLSCREEN ||
         s_currentState == POWER_STATE_IDLE_PAUSED ||
         s_currentState == POWER_STATE_HIDDEN_BATTERY ||
         s_currentState == POWER_STATE_HIDDEN_SESSION_LOCKED ||
-        s_currentState == POWER_STATE_HIDDEN_REMOTE_SESSION) {
+        s_currentState == POWER_STATE_HIDDEN_REMOTE_SESSION;
+}
+
+bool PowerManager::ShouldRenderFrame(int currentFpsCap) {
+    if (IsPaused()) {
         return false;
     }
 

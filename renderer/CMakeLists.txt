@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(GraffitiRenderer VERSION 1.0.0 LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -22,6 +24,17 @@ target_link_libraries(GraffitiRenderer
     dxgi
     dwmapi
 )
+
+if(BUILD_TESTING)
+    add_executable(NativeLifecycleTests
+        tests/NativeLifecycleTests.cpp
+        src/power/PowerManager.cpp
+        src/ipc/IPCServer.cpp
+    )
+    target_link_libraries(NativeLifecycleTests PRIVATE user32 gdi32 dwmapi dxgi)
+    add_test(NAME NativeLifecycleTests COMMAND NativeLifecycleTests)
+    set_tests_properties(NativeLifecycleTests PROPERTIES TIMEOUT 15)
+endif()
 
 # SolidColorTest Plugin (Temporarily disabled)
 # add_library(SolidColorTest SHARED src/plugins/SolidColorTest/SolidColorTest.cpp)

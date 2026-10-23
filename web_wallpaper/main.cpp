@@ -72,7 +72,23 @@ struct WorkerWSearch {
     HWND siblingWorkerW = nullptr;
 };
 
+bool IsDesktopHost(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd) || !IsWindowVisible(hwnd)) return false;
+    char className[256] = {};
+    GetClassNameA(hwnd, className, sizeof(className));
+    if (strcmp(className, "WorkerW") != 0 && strcmp(className, "Progman") != 0) return false;
+    DWORD shellPid = 0, hostPid = 0;
+    GetWindowThreadProcessId(GetShellWindow(), &shellPid);
+    GetWindowThreadProcessId(hwnd, &hostPid);
+    RECT bounds{};
+    return shellPid != 0 && hostPid == shellPid && GetWindowRect(hwnd, &bounds)
+        && bounds.left <= 0 && bounds.top <= 0
+        && bounds.right >= GetSystemMetrics(SM_CXSCREEN)
+        && bounds.bottom >= GetSystemMetrics(SM_CYSCREEN);
+}
+
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    if (!IsDesktopHost(hwnd)) return TRUE;
     HWND defView = FindWindowExA(hwnd, nullptr, "SHELLDLL_DefView", nullptr);
     if (defView != nullptr) {
         g_defView = defView;
@@ -104,7 +120,10 @@ HWND GetWorkerW(bool fastMode = false) {
 
         EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&search));
 
-        if (search.siblingWorkerW) return search.siblingWorkerW;
+        if (IsDesktopHost(search.siblingWorkerW)) return search.siblingWorkerW;
+        // Current Windows 11 desktops may expose only the Progman icons
+        // host. Do not wait five seconds or attach to a tiny hidden WorkerW.
+        if (IsDesktopHost(search.targetParent)) return search.targetParent;
         if (!fastMode) {
             Sleep(50);
         }
@@ -112,7 +131,7 @@ HWND GetWorkerW(bool fastMode = false) {
 
     if (search.targetParent) {
         HWND childWorkerW = FindWindowExA(search.targetParent, nullptr, "WorkerW", nullptr);
-        if (childWorkerW) return childWorkerW;
+        if (IsDesktopHost(childWorkerW)) return childWorkerW;
     }
 
     struct FallbackSearch {
@@ -124,7 +143,7 @@ HWND GetWorkerW(bool fastMode = false) {
     EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
         char className[256];
         GetClassNameA(hwnd, className, sizeof(className));
-        if (strcmp(className, "WorkerW") == 0) {
+        if (strcmp(className, "WorkerW") == 0 && IsDesktopHost(hwnd)) {
             if (FindWindowExA(hwnd, nullptr, "SHELLDLL_DefView", nullptr) == nullptr) {
                 if (IsWindowVisible(hwnd)) {
                     FallbackSearch* fs = reinterpret_cast<FallbackSearch*>(lParam);
@@ -216,7 +235,10 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
     // Create hidden popup first to avoid cross-thread locking and flashing
-    g_hWnd = CreateWindowExA(0, "WebWallpaperClass", "WebWallpaper",
+    // Keep the helper out of Alt+Tab/taskbar even if WorkerW is rebuilt while
+    // Explorer is restarting. It must never become an ordinary foreground
+    // popup while it is waiting to be reattached to the desktop.
+    g_hWnd = CreateWindowExA(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, "WebWallpaperClass", "WebWallpaper",
         WS_POPUP, // Remove WS_VISIBLE initially to prevent WebView2 init failure
         0, 0, screenWidth, screenHeight,
         nullptr, nullptr, hInstance, nullptr);
@@ -294,7 +316,22 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
                             SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
 
+                            if (!g_workerw || !IsWindow(g_workerw)) {
+                                std::ofstream log(GetLogPath(), std::ios_base::app);
+                                log << "WorkerW disappeared before WebView2 reparenting" << std::endl;
+                                ShowWindow(g_hWnd, SW_HIDE);
+                                PostQuitMessage(1);
+                                return E_FAIL;
+                            }
+
                             SetParent(g_hWnd, g_workerw);
+                            if (GetParent(g_hWnd) != g_workerw) {
+                                std::ofstream log(GetLogPath(), std::ios_base::app);
+                                log << "Failed to reparent Web wallpaper to WorkerW; refusing foreground popup" << std::endl;
+                                ShowWindow(g_hWnd, SW_HIDE);
+                                PostQuitMessage(1);
+                                return E_FAIL;
+                            }
 
                             if (g_defView && GetParent(g_hWnd) == GetParent(g_defView)) {
                                 SetWindowPos(g_hWnd, g_defView, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -302,8 +339,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
                                 SetWindowPos(g_hWnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
                             }
 
-                            ShowWindow(g_hWnd, SW_SHOW);
-                            ShowWindow(g_hWnd, SW_RESTORE);
+                            ShowWindow(g_hWnd, SW_SHOWNOACTIVATE);
 
                             ComPtr<ICoreWebView2Controller2> controller2;
                             webviewController.As(&controller2);
@@ -400,6 +436,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         if (wParam == 1 && webview) {
             POINT pt;
             if (GetCursorPos(&pt)) {
+                static POINT lastMouse = { -1, -1 };
+                if (pt.x != lastMouse.x || pt.y != lastMouse.y) {
+                    lastMouse = pt;
+                    PowerManager::OnMouseMove();
+                }
                 int screenWidth  = GetSystemMetrics(SM_CXSCREEN);
                 int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
@@ -425,7 +466,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 GetClassNameA(currentParent, className, sizeof(className));
             }
 
-            bool parentLost = (!currentParent || !isWin || strcmp(className, "WorkerW") != 0);
+            bool parentLost = !IsDesktopHost(currentParent) || currentParent != g_workerw;
 
             static auto s_lastWatchdogRun = std::chrono::steady_clock::time_point{};
             auto now = std::chrono::steady_clock::now();
@@ -442,9 +483,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 s_lastWatchdogRun = now;
                 HWND newWorkerW = GetWorkerW(true); // fast mode
                 if (newWorkerW) {
-                    if (newWorkerW == currentParent) {
-                        std::cout << "[Watchdog] Resolved WorkerW is same as current parent. Ignoring.\n";
-                    } else {
+                    if (newWorkerW != currentParent) {
+                        ShowWindow(g_hWnd, SW_HIDE);
                         LONG style = GetWindowLongA(g_hWnd, GWL_STYLE);
                         style &= ~WS_POPUP;
                         style |= WS_CHILD;
@@ -457,14 +497,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                         SetWindowPos(g_hWnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
 
                         SetParent(g_hWnd, newWorkerW);
-                        SetWindowPos(g_hWnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                        g_workerw = newWorkerW;
+                        if (GetParent(g_hWnd) != newWorkerW) {
+                            std::cout << "[Watchdog] WorkerW reattach failed; keeping helper hidden.\n";
+                            break;
+                        }
 
                         std::cout << "[Watchdog] Recovered WorkerW.\n";
                         std::cout << "[Verify] Actual parent: 0x" << std::hex << reinterpret_cast<uintptr_t>(GetParent(g_hWnd)) << std::dec << "\n";
                         std::cout << "[Verify] Expected: 0x" << std::hex << reinterpret_cast<uintptr_t>(g_workerw) << std::dec << "\n";
                         std::cout << "[Verify] Match: " << (GetParent(g_hWnd) == g_workerw ? "YES" : "NO") << "\n";
                     }
+                    g_workerw = newWorkerW;
+                    const HWND insertAfter = g_defView && GetParent(g_defView) == newWorkerW ? g_defView : HWND_BOTTOM;
+                    SetWindowPos(g_hWnd, insertAfter, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                    // Recover visibility even when the resolved handle is
+                    // unchanged; the old watchdog hid this case permanently.
+                    ShowWindow(g_hWnd, SW_SHOWNOACTIVATE);
+                    if (webviewController) webviewController->put_IsVisible(TRUE);
+                } else if (!isWin) {
+                    ShowWindow(g_hWnd, SW_HIDE);
                 }
             }
 
@@ -472,10 +523,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             PowerState currentState = PowerManager::GetState();
             if (currentState != lastState) {
                 lastState = currentState;
-                if (currentState == POWER_STATE_HIDDEN_FULLSCREEN ||
-                    currentState == POWER_STATE_HIDDEN_OCCLUDED ||
-                    currentState == POWER_STATE_HIDDEN_BATTERY ||
-                    currentState == POWER_STATE_HIDDEN_SESSION_LOCKED) {
+                if (PowerManager::IsPaused()) {
                     webview->PostWebMessageAsJson(L"{\"type\":\"power\", \"action\":\"pause\"}");
                 } else {
                     webview->PostWebMessageAsJson(L"{\"type\":\"power\", \"action\":\"resume\"}");

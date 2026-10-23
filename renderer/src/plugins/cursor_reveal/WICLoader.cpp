@@ -33,7 +33,8 @@ bool WICLoader::LoadTexture(
         wpath.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
 
     if (FAILED(hr)) {
-        std::cout << "[CursorReveal] Failed to load WIC image: " << filepath << "\n";
+        std::cout << "[WICLoader] Failed to load image: " << filepath
+                  << " (HRESULT 0x" << std::hex << hr << std::dec << ")\n";
         wicFactory->Release();
         return false;
     }
@@ -100,7 +101,7 @@ bool WICLoader::LoadTexture(
         srvDesc.Format = desc.Format;
         srvDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
         srvDesc.Texture2D.MipLevels = 1;
-        device->CreateShaderResourceView(*outTexture, &srvDesc, outSRV);
+        hr = device->CreateShaderResourceView(*outTexture, &srvDesc, outSRV);
     }
 
     converter->Release();
@@ -109,5 +110,9 @@ bool WICLoader::LoadTexture(
     decoder->Release();
     wicFactory->Release();
 
-    return SUCCEEDED(hr);
+    if (FAILED(hr)) {
+        std::cout << "[WICLoader] Failed to create GPU texture: " << filepath
+                  << " (HRESULT 0x" << std::hex << hr << std::dec << ")\n";
+    }
+    return SUCCEEDED(hr) && outTexture && *outTexture && (!outSRV || *outSRV);
 }

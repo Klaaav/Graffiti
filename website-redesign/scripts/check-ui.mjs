@@ -165,6 +165,9 @@ try {
     await page.locator('#download').scrollIntoViewIfNeeded();
     assert.equal(await page.locator('#download .utility-detail > p').innerText(), downloadCopy, 'Download copy describes the Windows app.');
     assert.equal(await page.locator('#download .utility-detail small').innerText(), downloadNote, 'Download availability note is visitor-facing.');
+    const latestDownload = page.getByRole('link', { name: /Download latest version/ });
+    assert.equal(await latestDownload.getAttribute('href'), installerURL, 'The latest-version button points directly to the repository installer.');
+    assert.equal(await latestDownload.getAttribute('download'), 'Graffiti_1.0.0_x64-setup.exe', 'The latest-version button requests a named installer download.');
     await page.getByRole('button', { name: /Browse versions/ }).click();
     await page.locator('#release-dialog[open]').waitFor();
     assert.equal(await page.locator('#release-dialog').getByText('VERSION 1.0 / CURRENT', { exact: true }).count(), 1, 'Version 1.0 is listed as current.');
@@ -172,6 +175,7 @@ try {
     assert.equal(await page.locator('#release-dialog').getByText('Curved shapes in Gallery alongside straight-sided shapes', { exact: true }).count(), 1, 'Curved Gallery shapes are listed as planned.');
     assert.equal(await page.locator('#release-dialog').getByText('Optional native 3D rendering alongside Web Wallpaper', { exact: true }).count(), 1, 'Native 3D rendering is listed as planned.');
     assert.equal(await page.locator('#release-dialog').getByText('New cursor-reactive effects', { exact: true }).count(), 1, 'New effects are listed as planned.');
+    assert.equal(await page.locator('#release-dialog').getByText('Live wallpapers', { exact: true }).count(), 1, 'Live wallpapers are listed as planned.');
     assert.equal(await page.locator('#release-dialog a[download]').getAttribute('href'), installerURL, 'Version 1.0 points to the repository installer.');
     if (scenario.reducedMotion !== 'reduce' && !scenario.hasTouch) {
       const dialogBounds = await page.locator('#release-dialog').boundingBox();

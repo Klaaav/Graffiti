@@ -36,6 +36,14 @@ export async function getStatus(): Promise<any> {
     return invoke("get_status");
 }
 
+export async function getAdapters(): Promise<string[]> {
+    return invoke("get_adapters");
+}
+
+export async function getBakedWallpapersDir(): Promise<string> {
+    return invoke("get_baked_wallpapers_dir");
+}
+
 export async function importWallpaper(filePath: string): Promise<string> {
     return invoke("import_wallpaper", { filePath });
 }
@@ -54,6 +62,14 @@ export async function saveBakedWallpaper(filename: string, bytes: Uint8Array): P
 
 export async function deleteBakedWallpaper(path: string): Promise<void> {
     return invoke("delete_baked_wallpaper", { path });
+}
+
+export async function saveBakedProject(path: string, project: unknown): Promise<void> {
+    return invoke("save_baked_project", { path, project });
+}
+
+export async function loadBakedProject(path: string): Promise<any | null> {
+    return invoke("load_baked_project", { path });
 }
 
 export async function isAutostart(): Promise<boolean> {
@@ -89,7 +105,15 @@ export async function stopWebWallpaper(): Promise<void> {
 }
 
 export async function getWebConfig(): Promise<any | null> {
-    return invoke("get_web_config");
+  return invoke("get_web_config");
+}
+
+export async function getWebAssetsDir(): Promise<string> {
+  return invoke("get_web_assets_dir");
+}
+
+export async function isWebWallpaperReady(): Promise<boolean> {
+    return invoke("is_web_wallpaper_ready");
 }
 
 export async function importWebAsset(filePath: string): Promise<string> {

@@ -27,6 +27,7 @@ ort = "2.0.0-rc.9"
 image = "0.24"
 imageproc = "0.23"
 tauri-plugin-store = "2"
+tokio = { version = "1", features = ["net", "io-util", "sync", "time", "macros"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

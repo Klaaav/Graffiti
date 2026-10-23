@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { load } from '@tauri-apps/plugin-store';
 import { enable as enableAuto, disable as disableAuto, isEnabled as isAutoEnabled } from '@tauri-apps/plugin-autostart';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { Settings as SettingsIcon } from 'lucide-react';
 import PreviewCanvas from './pages/PreviewCanvas';
 import './index.css';
 
@@ -15,27 +16,32 @@ import {
   importWebAsset,
   startWebWallpaper,
   stopWebWallpaper,
+  isWebWallpaperReady,
+  getWebConfig,
+  getWebAssetsDir,
   generateDepthMap,
   getStatus,
+  getAdapters,
+  getBakedWallpapersDir,
   listWallpapers,
   saveBakedWallpaper,
+  saveBakedProject,
+  loadBakedProject,
   deleteBakedWallpaper,
   fileExists,
 } from './ipc';
 import { applyWallpaper, setEffect as applyEffectEngine, removeEffect } from './wallpaperManager';
 import {
-  loadSettings,
+  loadStartupState,
   saveSettings,
+  applySettingsToBackend,
   AppSettings,
   defaultSettings,
   resetToDefaults,
-  getActiveSession,
   saveActiveSession,
   saveEffectSettings,
-  loadEffectSettings,
   saveQualitySetting,
-  loadQualitySettings,
-  loadSelectedEffect,
+  saveResolutionMode,
   saveSelectedEffect,
   saveWallpaperPairing,
 } from './store';
@@ -145,6 +151,7 @@ interface Shape {
   imagePath: string | null;
   transform: Transform;
   color?: string;
+  overlayOpacity?: number;
 }
 
 interface Background {
@@ -166,6 +173,81 @@ const DEFAULT_PROJECT: Project = {
   shapes: [],
   aspectRatio: 'auto'
 };
+
+const normalizeProject = (stored: Project): Project => ({
+  ...stored,
+  version: stored.version || '1.0',
+  background: {
+    type: stored.background?.type === 'image' ? 'image' : 'color',
+    value: stored.background?.value || '#242825',
+    fit: stored.background?.fit || 'cover',
+  },
+  shapes: (stored.shapes || []).map((shape, index) => ({
+    ...shape,
+    id: shape.id || `shape-${Date.now()}-${index}`,
+    name: shape.name || `Shape ${index + 1}`,
+    vertices: shape.vertices?.length >= 3 ? shape.vertices : [[0.2, 0.2], [0.8, 0.2], [0.8, 0.8], [0.2, 0.8]],
+    imagePath: shape.imagePath || null,
+    color: shape.color || '#efff1b',
+    overlayOpacity: typeof shape.overlayOpacity === 'number' ? shape.overlayOpacity : 0.18,
+    transform: {
+      panX: Number(shape.transform?.panX ?? 0),
+      panY: Number(shape.transform?.panY ?? 0),
+      zoom: Number(shape.transform?.zoom ?? 1),
+      rotate: Number(shape.transform?.rotate ?? 0),
+    },
+  })),
+});
+
+const getPathFileName = (path: string): string => path.split(/[\\/]/).pop() || path;
+
+const hexToRgb = (hex: string): [number, number, number] | null => {
+  const value = hex.trim().replace('#', '');
+  const expanded = value.length === 3 ? value.split('').map((part) => part + part).join('') : value;
+  if (!/^[0-9a-f]{6}$/i.test(expanded)) return null;
+  return [
+    parseInt(expanded.slice(0, 2), 16),
+    parseInt(expanded.slice(2, 4), 16),
+    parseInt(expanded.slice(4, 6), 16),
+  ];
+};
+
+const getReadableTextColor = (background: string): string => {
+  const rgb = hexToRgb(background);
+  if (!rgb) return '#151815';
+  const luminance = rgb.map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+  }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const contrast = (foreground: number) => {
+    const lighter = Math.max(luminance, foreground);
+    const darker = Math.min(luminance, foreground);
+    return (lighter + 0.05) / (darker + 0.05);
+  };
+  return contrast(0.0) >= contrast(1.0) ? '#151815' : '#f5f4ed';
+};
+
+const resolveShapeColor = (shape: Shape, accentColor: string): string => {
+  const storedColor = shape.color?.trim();
+  if (!storedColor) return accentColor;
+  const normalized = storedColor.toLowerCase();
+  return normalized === '#efff1b' || normalized === '#dfff4f' ? accentColor : storedColor;
+};
+
+const createBakedImageProject = (path: string, aspectRatio: Project['aspectRatio'] = 'auto'): Project => ({
+  ...DEFAULT_PROJECT,
+  aspectRatio: aspectRatio || 'auto',
+  background: { ...DEFAULT_PROJECT.background },
+  shapes: [{
+    id: `baked-image-${Date.now()}`,
+    name: getPathFileName(path).replace(/\.[^/.]+$/, '') || 'Baked image',
+    vertices: [[0.04, 0.04], [0.96, 0.04], [0.96, 0.96], [0.04, 0.96]],
+    imagePath: path,
+    transform: { panX: 0, panY: 0, zoom: 1, rotate: 0 },
+    color: '#efff1b',
+    overlayOpacity: 0,
+  }],
+});
 
 const getMonitorAspect = (): { ratio: number; label: string } => {
   const w = (typeof window !== 'undefined' && window.screen?.width) ? window.screen.width : 1920;
@@ -242,6 +324,7 @@ export default function App() {
 
   // ─── Quality & Engine ───────────────────────
   const resolutions = ['Native', '75%', 'Half', 'Auto'];
+  const resolutionModes = ['native', '75', 'half', 'auto'];
   const resScales = [1.0, 0.75, 0.5, 1.0];
   const fpsOptions = ['60', 'Max', '30'];
   const fpsValues = [60, 0, 30];
@@ -252,6 +335,7 @@ export default function App() {
   // ─── Effect Selection ───────────────────────
   const [selectedEffect, setSelectedEffect] = useState<string>('Cursor Reveal');
   const [activeEffect, setActiveEffect] = useState<string | null>(null);
+  const [isActivatingEffect, setIsActivatingEffect] = useState(false);
 
   // ─── Per-Effect Images ──────────────────────
   const [effectImages, setEffectImages] = useState<Record<string, Record<string, string | null>>>({
@@ -260,7 +344,7 @@ export default function App() {
     'Glass Lens': { baseImage: null },
     'Space Ball': { baseImage: null },
     'Brick Outline': { baseImage: null },
-    'Depth Parallax': { testWallpaper: null },
+    'Depth Parallax': { testWallpaper: null, depthMap: null },
   });
 
   // ─── Per-Effect Slider Parameters ───────────
@@ -272,6 +356,8 @@ export default function App() {
   const [isGeneratingDepth, setIsGeneratingDepth] = useState(false);
   const [depthError, setDepthError] = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const initGenerationRef = useRef(0);
+  const desktopOperationRef = useRef(0);
 
   // ─── Side Popup ─────────────────────────────
   const [sidePopupOpen, setSidePopupOpen] = useState(false);
@@ -295,19 +381,39 @@ export default function App() {
   const [webHOff, setWebHOff] = useState<number>(0.0);
   const [webVOff, setWebVOff] = useState<number>(0.0);
   const [webSens, setWebSens] = useState<number>(0.2);
+  const [isActivatingWeb, setIsActivatingWeb] = useState(false);
 
   // ─── App Settings ───────────────────────────
   const [appSettings, setAppSettings] = useState<AppSettings>(defaultSettings);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
+  const [gpuAdapters, setGpuAdapters] = useState<string[]>([]);
 
   // ─── Theme ──────────────────────────────────
   const [highlightColor, setHighlightColor] = useState('#dfff4f');
   const [secondaryColor, setSecondaryColor] = useState('#f4f6f4');
 
+  useEffect(() => {
+    const root = document.documentElement;
+    const highlightInk = getReadableTextColor(highlightColor);
+    const secondaryInk = getReadableTextColor(secondaryColor);
+    // Keep muted copy in the same readable ink family as primary copy. A
+    // blended pastel looked attractive on the default palette but became
+    // unreadable when a user chose a saturated/dark theme surface.
+    const secondaryMuted = secondaryInk;
+    root.style.setProperty('--highlight-ink', highlightInk);
+    root.style.setProperty('--highlight-muted', highlightInk);
+    root.style.setProperty('--secondary-ink', secondaryInk);
+    root.style.setProperty('--secondary-muted', secondaryMuted);
+    root.style.setProperty('--ink', secondaryInk);
+    root.style.setProperty('--muted', secondaryMuted);
+  }, [highlightColor, secondaryColor]);
+
   // ─── Gallery / Canvas Studio ───────────────────────
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const [project, setProject] = useState<Project>(DEFAULT_PROJECT);
+  const projectRef = useRef<Project>(DEFAULT_PROJECT);
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<'IDLE' | 'DRAWING'>('IDLE');
   const [drawingShape, setDrawingShape] = useState<[number, number][]>([]);
@@ -335,6 +441,7 @@ export default function App() {
       historyIndex.current--;
       const prev = history.current[historyIndex.current];
       setProject(prev);
+      projectRef.current = prev;
       saveProject(prev);
     }
   };
@@ -344,6 +451,7 @@ export default function App() {
       historyIndex.current++;
       const next = history.current[historyIndex.current];
       setProject(next);
+      projectRef.current = next;
       saveProject(next);
     }
   };
@@ -361,10 +469,116 @@ export default function App() {
     initialVertices?: [number, number][];
   } | null>(null);
 
+  useEffect(() => {
+    if (!sidePopupOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (
+        !target.closest('.effects-side-popup') &&
+        !target.closest('#btn-choose-effect') &&
+        !target.closest('#btn-open-sliders')
+      ) {
+        setSidePopupOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [sidePopupOpen]);
+
   // ─── Refs ───────────────────────────────────
   const glbFileInputRef = useRef<HTMLInputElement | null>(null);
   const bgImageFileInputRef = useRef<HTMLInputElement | null>(null);
   const debounceTimer = useRef<number | null>(null);
+  const depthGenerationPromisesRef = useRef<Record<string, Promise<string>>>({});
+
+  const getDepthMapPath = (imagePath: string): string =>
+    imagePath.replace(/\.[^/.]+$/, '') + '_depth.png';
+
+  const joinWindowsPath = (directory: string, fileName: string): string =>
+    `${directory.replace(/[\\/]+$/, '')}\\${fileName}`;
+
+  const waitForWebWallpaperReady = async (timeoutMs = 30000): Promise<void> => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await isWebWallpaperReady()) return;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 250));
+    }
+    throw new Error(`The Web wallpaper did not finish attaching within ${timeoutMs / 1000} seconds.`);
+  };
+
+  const retryStartupCommand = async <T,>(label: string, operation: () => Promise<T>, attempts = 5): Promise<T> => {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await operation();
+      } catch (err) {
+        lastError = err;
+        if (attempt < attempts) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 250 * attempt));
+        }
+      }
+    }
+    throw new Error(`${label} failed after ${attempts} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+  };
+
+  const ensureDepthMap = async (imagePath: string, knownDepthPath?: string | null): Promise<string> => {
+    const candidates = [knownDepthPath, getDepthMapPath(imagePath)].filter(
+      (candidate, index, all): candidate is string => Boolean(candidate) && all.indexOf(candidate) === index,
+    );
+
+    for (const candidate of candidates) {
+      if (await fileExists(candidate)) {
+        setEffectImages((prev) => ({
+          ...prev,
+          'Depth Parallax': { ...prev['Depth Parallax'], testWallpaper: imagePath, depthMap: candidate },
+        }));
+        return candidate;
+      }
+    }
+
+    const existingGeneration = depthGenerationPromisesRef.current[imagePath];
+    if (existingGeneration) return existingGeneration;
+
+    const generation = (async () => {
+      setIsGeneratingDepth(true);
+      setDepthError(null);
+      try {
+        const generatedPath = await generateDepthMap(imagePath);
+        if (!generatedPath || !(await fileExists(generatedPath))) {
+          throw new Error('The depth generator returned no usable depth-map file.');
+        }
+        setEffectImages((prev) => ({
+          ...prev,
+          'Depth Parallax': { ...prev['Depth Parallax'], testWallpaper: imagePath, depthMap: generatedPath },
+        }));
+        return generatedPath;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setDepthError(message);
+        setEffectImages((prev) => ({
+          ...prev,
+          'Depth Parallax': { ...prev['Depth Parallax'], testWallpaper: imagePath, depthMap: null },
+        }));
+        throw new Error(message);
+      } finally {
+        setIsGeneratingDepth(false);
+      }
+    })();
+
+    depthGenerationPromisesRef.current[imagePath] = generation;
+    try {
+      return await generation;
+    } finally {
+      if (depthGenerationPromisesRef.current[imagePath] === generation) {
+        delete depthGenerationPromisesRef.current[imagePath];
+      }
+    }
+  };
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   const getImage = (path: string, onLoaded?: () => void): HTMLImageElement => {
     if (imageCache.current[path]) return imageCache.current[path];
@@ -387,6 +601,11 @@ export default function App() {
   // 1. INIT: Load all persisted settings, restore session
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
+    const generation = ++initGenerationRef.current;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && initGenerationRef.current === generation;
+    const initialDesktopOperation = desktopOperationRef.current;
+    const canRestoreDesktop = () => isCurrent() && desktopOperationRef.current === initialDesktopOperation;
     const splashTimer = setTimeout(() => setShowSplash(false), 1100);
 
     // Restore theme
@@ -395,11 +614,21 @@ export default function App() {
     if (savedHL) { setHighlightColor(savedHL); document.documentElement.style.setProperty('--highlight', savedHL); }
     if (savedSec) { setSecondaryColor(savedSec); document.documentElement.style.setProperty('--secondary', savedSec); }
 
-    isAutoEnabled().then(setAutostartEnabled).catch(() => {});
-    loadSettings().then(setAppSettings).catch(console.error);
+    void (async () => {
+      try {
+        const enabled = await isAutoEnabled();
+        if (isCurrent()) setAutostartEnabled(enabled);
+      } catch (err) {
+        console.warn('Unable to read Windows startup registration:', err);
+        if (isCurrent()) setAutostartError('Windows startup registration is unavailable.');
+      }
+    })();
+
+    getBakedWallpapersDir().then((dir) => { if (isCurrent()) setBakedWallpapersDir(dir); }).catch(() => {});
 
     // Load real baked wallpapers from %APPDATA%\Graffiti\baked_wallpapers
     listWallpapers().then(wps => {
+      if (!isCurrent()) return;
       setRealBakedWallpapers(wps);
       if (wps.length > 0) {
         const lastSlash = Math.max(wps[0].lastIndexOf('\\'), wps[0].lastIndexOf('/'));
@@ -410,17 +639,20 @@ export default function App() {
     // Load per-effect settings from store
     const loadAllEffectSettings = async () => {
       try {
-        // Quality settings
-        const quality = await loadQualitySettings();
+        const startup = await loadStartupState();
+        const { quality, effects, settings } = startup;
+        if (!isCurrent()) return;
+        setAppSettings(settings);
         if (quality.fpsCap !== null) {
           const fIdx = fpsValues.indexOf(quality.fpsCap);
           if (fIdx >= 0) setFpsIdx(fIdx);
-          await setFpsCap(quality.fpsCap);
         }
-        if (quality.resolutionScale !== null) {
+        if (quality.resolutionMode) {
+          const rIdx = resolutionModes.indexOf(quality.resolutionMode);
+          if (rIdx >= 0) setResIdx(rIdx);
+        } else if (quality.resolutionScale !== null) {
           const rIdx = resScales.indexOf(quality.resolutionScale);
           if (rIdx >= 0) setResIdx(rIdx);
-          await setResolutionScale(quality.resolutionScale);
         }
 
         // Populate initial params from defaults
@@ -431,10 +663,15 @@ export default function App() {
         });
 
         // Load saved per-effect settings and images
-        const newImages = { ...effectImages };
+        const newImages: Record<string, Record<string, string | null>> = Object.fromEntries(
+          Object.entries(effectImages).map(([effect, images]) => [effect, { ...images }]),
+        );
 
         // Cursor Reveal
-        const crSettings = await loadEffectSettings('cursor_reveal');
+        const crSettings = effects.cursor_reveal;
+        initialParams['Cursor Reveal'].fadeWhenResting = crSettings?.fadeWhenResting != null
+          ? (crSettings.fadeWhenResting > 0.5 ? 1 : 0)
+          : 1;
         if (crSettings) {
           if (crSettings.layerA) newImages['Cursor Reveal'].layerA = crSettings.layerA;
           if (crSettings.layerB) newImages['Cursor Reveal'].layerB = crSettings.layerB;
@@ -442,11 +679,14 @@ export default function App() {
           if (crSettings.brushHardness != null) initialParams['Cursor Reveal'].brushHardness = crSettings.brushHardness;
           if (crSettings.trailLength != null) initialParams['Cursor Reveal'].trailLength = crSettings.trailLength;
           if (crSettings.fadeSpeed != null) initialParams['Cursor Reveal'].fadeSpeed = crSettings.fadeSpeed;
-          if (crSettings.fadeWhenResting != null) setCRFadeWhenResting(crSettings.fadeWhenResting === 1);
+          if (crSettings.fadeWhenResting != null) {
+            initialParams['Cursor Reveal'].fadeWhenResting = crSettings.fadeWhenResting > 0.5 ? 1 : 0;
+            if (isCurrent()) setCRFadeWhenResting(crSettings.fadeWhenResting > 0.5);
+          }
         }
 
         // Gravity Lens
-        const glSettings = await loadEffectSettings('gravity_lens');
+        const glSettings = effects.gravity_lens;
         if (glSettings) {
           if (glSettings.baseImage) newImages['Gravity Lens'].baseImage = glSettings.baseImage;
           ['lensStrength', 'lensRadius', 'stiffness', 'damping', 'dispersion', 'coreDarkening', 'trailLength', 'fadeDecay'].forEach(k => {
@@ -455,7 +695,7 @@ export default function App() {
         }
 
         // Glass Lens
-        const gltSettings = await loadEffectSettings('gravity_lens_transparent');
+        const gltSettings = effects.gravity_lens_transparent;
         if (gltSettings) {
           if (gltSettings.baseImage) newImages['Glass Lens'].baseImage = gltSettings.baseImage;
           ['pressDepth', 'pressRadius', 'stiffness', 'damping', 'dispersion', 'coreDarkening', 'shadingStrength', 'trailLength', 'fadeDecay'].forEach(k => {
@@ -464,7 +704,7 @@ export default function App() {
         }
 
         // Space Ball
-        const sp2Settings = await loadEffectSettings('stone_press_v2');
+        const sp2Settings = effects.stone_press_v2;
         if (sp2Settings) {
           if (sp2Settings.baseImage) newImages['Space Ball'].baseImage = sp2Settings.baseImage;
           ['pressDepth', 'pressRadius', 'stiffness', 'damping', 'depthDarkening', 'directionalShading', 'parallaxStrength'].forEach(k => {
@@ -473,43 +713,178 @@ export default function App() {
         }
 
         // Brick Outline
-        const boSettings = await loadEffectSettings('brick_outline');
+        const boSettings = effects.brick_outline;
+        const savedOutlineColor = boSettings?.outlineColor || '#ffffff';
+        const defaultOutline = hexToRgb(savedOutlineColor) || [255, 255, 255];
+        initialParams['Brick Outline'].outlineColorR = defaultOutline[0] / 255;
+        initialParams['Brick Outline'].outlineColorG = defaultOutline[1] / 255;
+        initialParams['Brick Outline'].outlineColorB = defaultOutline[2] / 255;
         if (boSettings) {
           if (boSettings.baseImage) newImages['Brick Outline'].baseImage = boSettings.baseImage;
           ['brickWidth', 'brickHeight', 'lineThickness', 'effectRadius', 'edgeSoftness', 'glowIntensity'].forEach(k => {
             if (boSettings[k] != null) initialParams['Brick Outline'][k] = boSettings[k];
           });
-          if (boSettings.outlineColor) setBOOutlineColor(boSettings.outlineColor);
+          if (boSettings.outlineColor && isCurrent()) setBOOutlineColor(boSettings.outlineColor);
+          if (boSettings.outlineColor) {
+            const outline = hexToRgb(boSettings.outlineColor);
+            if (outline) {
+              initialParams['Brick Outline'].outlineColorR = outline[0] / 255;
+              initialParams['Brick Outline'].outlineColorG = outline[1] / 255;
+              initialParams['Brick Outline'].outlineColorB = outline[2] / 255;
+            }
+          }
         }
 
         // Depth Parallax
-        const dpSettings = await loadEffectSettings('depth_parallax');
+        const dpSettings = effects.depth_parallax;
         if (dpSettings) {
           if (dpSettings.testWallpaper) newImages['Depth Parallax'].testWallpaper = dpSettings.testWallpaper;
+          if (dpSettings.depthMap) newImages['Depth Parallax'].depthMap = dpSettings.depthMap;
           if (dpSettings.parallaxStrength != null) initialParams['Depth Parallax'].parallaxStrength = dpSettings.parallaxStrength;
         }
 
+        if (!isCurrent()) return;
         setEffectImages(newImages);
         setEffectParams(initialParams);
 
         // Restore selected effect
-        const lastSelected = await loadSelectedEffect();
+        const lastSelected = startup.selectedEffect;
+        if (!isCurrent()) return;
         if (lastSelected && ENGINE_ID_TO_DISPLAY[lastSelected]) {
           setSelectedEffect(ENGINE_ID_TO_DISPLAY[lastSelected]);
         }
 
-        // Restore active session
-        const session = await getActiveSession();
+        // The UI is ready now, even on a cold renderer launch. Restore the
+        // desktop afterwards, and let a user action supersede this restore.
+        setSettingsLoaded(true);
+        if (!canRestoreDesktop()) return;
+        try {
+          await retryStartupCommand('Startup settings', () => applySettingsToBackend(settings, false));
+          if (!canRestoreDesktop()) return;
+          if (quality.fpsCap !== null) await setFpsCap(quality.fpsCap);
+          if (!canRestoreDesktop()) return;
+          if (quality.resolutionMode === 'auto') {
+            await setQualityAuto();
+          } else {
+            const rIdx = quality.resolutionMode ? resolutionModes.indexOf(quality.resolutionMode) : -1;
+            const scale = rIdx >= 0 ? resScales[rIdx] : quality.resolutionScale;
+            if (scale !== null) await setResolutionScale(scale);
+          }
+        } catch (err) {
+          console.warn('Failed to restore renderer configuration:', err);
+        }
+        if (!canRestoreDesktop()) return;
+        void getAdapters().then(adapters => {
+          if (isCurrent()) setGpuAdapters(adapters);
+        }).catch(() => {});
+
+        // Restore the actual desktop session, not only the UI badge. This is
+        // especially important for Windows autostart, where the app starts
+        // hidden and must re-attach the native renderer or Web wallpaper.
+        const session = startup.session;
+        if (!canRestoreDesktop()) return;
         if (session) {
-          if (session.effect === 'web-wallpaper') {
-            setWebStatus('Running on Desktop');
-          } else if (session.effect && ENGINE_ID_TO_DISPLAY[session.effect]) {
-            setActiveEffect(ENGINE_ID_TO_DISPLAY[session.effect]);
+          try {
+            if (session.effect === 'web-wallpaper') {
+              const config = await getWebConfig();
+              const assetsDir = await getWebAssetsDir();
+              const modelName = typeof config?.model === 'string' ? config.model : '';
+              if (!modelName) throw new Error('Saved Web wallpaper model is missing.');
+
+              const modelPath = joinWindowsPath(assetsDir, modelName);
+              if (!(await fileExists(modelPath))) {
+                throw new Error(`Saved Web wallpaper model is missing: ${modelPath}`);
+              }
+
+              const backgroundName = typeof config?.backgroundImage === 'string' ? config.backgroundImage : '';
+              const backgroundPath = backgroundName ? joinWindowsPath(assetsDir, backgroundName) : undefined;
+              if (config?.backgroundType === 'image' && backgroundPath && !(await fileExists(backgroundPath))) {
+                throw new Error(`Saved Web wallpaper background is missing: ${backgroundPath}`);
+              }
+              if (!canRestoreDesktop()) return;
+              await startWebWallpaper(
+                modelPath,
+                config?.backgroundType === 'image' ? 'image' : 'color',
+                typeof config?.backgroundColor === 'string' ? config.backgroundColor : '#000000',
+                backgroundPath,
+                Number(config?.rotationFactor ?? 0.2),
+                Number(config?.zoomFactor ?? 1.0),
+                Number(config?.offsetX ?? 0.0),
+                Number(config?.offsetY ?? 0.0),
+                Boolean(config?.enableVerticalRotation ?? true),
+                Number(config?.initialRotationX ?? 0.0),
+                Number(config?.initialRotationY ?? 0.0),
+              );
+              await waitForWebWallpaperReady();
+              if (!canRestoreDesktop()) return;
+              setWebModelPath(modelPath);
+              setWebBgType(config?.backgroundType === 'image' ? 'image' : 'color');
+              setWebBgColor(typeof config?.backgroundColor === 'string' ? config.backgroundColor : '#000000');
+              setWebBgImage(backgroundPath || null);
+              setWebSens(Number(config?.rotationFactor ?? 0.2));
+              setWebZoom(Number(config?.zoomFactor ?? 1.0));
+              setWebHOff(Number(config?.offsetX ?? 0.0));
+              setWebVOff(Number(config?.offsetY ?? 0.0));
+              setWebStatus('Running on Desktop');
+            } else if (session.isGalleryCollage || session.effect === 'none') {
+              await removeEffect();
+              if (!canRestoreDesktop()) return;
+              if (session.layerA && await fileExists(session.layerA)) {
+                await applyWallpaper(session.layerA, '');
+              }
+              setActiveEffect(null);
+            } else {
+              const displayEffect = session.effect ? ENGINE_ID_TO_DISPLAY[session.effect] : undefined;
+              if (!displayEffect) throw new Error(`Unknown saved effect: ${session.effect}`);
+
+              let layerA = session.layerA || '';
+              let layerB = session.layerB || '';
+              const savedImages = newImages[displayEffect] || {};
+
+              if (displayEffect === 'Cursor Reveal') {
+                layerA = layerA || savedImages.layerA || '';
+                layerB = layerB || savedImages.layerB || '';
+              } else if (displayEffect === 'Depth Parallax') {
+                layerA = layerA || savedImages.testWallpaper || '';
+                if (layerA) {
+                  layerB = await ensureDepthMap(layerA, layerB || savedImages.depthMap);
+                  newImages['Depth Parallax'] = { ...savedImages, testWallpaper: layerA, depthMap: layerB };
+                  await saveEffectSettings('depth_parallax', { testWallpaper: layerA, depthMap: layerB });
+                }
+              } else {
+                layerA = layerA || savedImages.baseImage || '';
+              }
+
+              if (!layerA || !(await fileExists(layerA))) {
+                throw new Error(`Saved wallpaper is missing for ${displayEffect}.`);
+              }
+              if (layerB && !(await fileExists(layerB))) {
+                throw new Error(`Saved secondary wallpaper is missing for ${displayEffect}.`);
+              }
+
+              if (!canRestoreDesktop()) return;
+              await applyEffectEngine(session.effect);
+              if (!canRestoreDesktop()) return;
+              await applyWallpaper(layerA, layerB);
+              const params = initialParams[displayEffect] || {};
+              for (const [key, value] of Object.entries(params)) {
+                if (!canRestoreDesktop()) return;
+                await setSetting(key, value);
+              }
+              if (canRestoreDesktop()) {
+                setActiveEffect(displayEffect);
+                await saveActiveSession({ effect: session.effect, layerA, layerB });
+              }
+            }
+          } catch (restoreError) {
+            console.warn('Saved desktop session could not be restored:', restoreError);
           }
         }
 
+        if (!isCurrent()) return;
         setSettingsLoaded(true);
       } catch (err) {
+        if (!isCurrent()) return;
         console.error('Failed to load effect settings:', err);
         // Still populate defaults
         const initialParams: Record<string, Record<string, number>> = {};
@@ -523,26 +898,24 @@ export default function App() {
     };
     loadAllEffectSettings();
 
-    return () => clearTimeout(splashTimer);
+    return () => {
+      cancelled = true;
+      clearTimeout(splashTimer);
+    };
   }, []);
-
-  // Auto-persist effect params after settings are loaded (prevents overwriting store with defaults)
-  useEffect(() => {
-    if (!settingsLoaded) return;
-    const engineId = EFFECT_TO_ENGINE_ID[selectedEffect];
-    if (engineId && effectParams[selectedEffect]) {
-      saveEffectSettings(engineId, effectParams[selectedEffect]);
-    }
-  }, [settingsLoaded, effectParams, selectedEffect]);
 
   // ═══════════════════════════════════════════════════════════════
   // 2. LIVE FPS + STATUS POLLING (every 1s)
   // ═══════════════════════════════════════════════════════════════
   useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
     const fetchStatus = async () => {
+      const desktopOperation = desktopOperationRef.current;
       try {
+        if (document.hidden) return;
         const status = await getStatus();
-        if (status) {
+        if (!cancelled && desktopOperationRef.current === desktopOperation && status) {
           if (status.fps !== undefined) setLiveFps(status.fps);
           if (status.activePlugin) {
             let uiName = status.activePlugin
@@ -556,11 +929,15 @@ export default function App() {
             setActiveEffect(newActive);
           }
         }
-      } catch (_) { /* status polling failure is non-fatal */ }
+      } catch (_) { /* status polling failure is non-fatal */ } finally {
+        if (!cancelled) timer = window.setTimeout(fetchStatus, 1000);
+      }
     };
     fetchStatus();
-    const interval = setInterval(fetchStatus, 1000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   // Load gallery project on mount
@@ -570,15 +947,9 @@ export default function App() {
         const store = await load('gallery-project.json');
         const proj = await store.get<Project>('project');
         if (proj && proj.shapes) {
-          const normalizedProj = {
-            ...proj,
-            shapes: proj.shapes.map((s, idx) => ({
-              ...s,
-              name: s.name || `Shape ${idx + 1}`,
-              transform: s.transform || { panX: 0, panY: 0, zoom: 1, rotate: 0 }
-            }))
-          };
+          const normalizedProj = normalizeProject(proj);
           setProject(normalizedProj);
+          projectRef.current = normalizedProj;
           commitHistory(normalizedProj);
           if (normalizedProj.shapes.length > 0) {
             setSelectedShapeId(normalizedProj.shapes[0].id);
@@ -658,6 +1029,8 @@ export default function App() {
 
     // 1. Draw Background
     const defaultBgColor = '#242825';
+    const accentColor = highlightColor;
+    const lightColor = secondaryColor;
     if (project.background.type === 'color') {
       ctx.fillStyle = project.background.value || defaultBgColor;
       ctx.fillRect(0, 0, cw, ch);
@@ -731,18 +1104,26 @@ export default function App() {
           const scaleY = shapeH / img.naturalHeight;
           const defaultScale = Math.max(scaleX, scaleY) || 1;
 
-          const scaledW = img.naturalWidth * defaultScale;
-          const scaledH = img.naturalHeight * defaultScale;
+           const scaledW = img.naturalWidth * defaultScale;
+           const scaledH = img.naturalHeight * defaultScale;
 
-          ctx.drawImage(img, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
-        } else {
-          ctx.fillStyle = shape.color || (shape.id === effectiveSelectedShapeId ? 'rgba(239, 255, 27, 0.24)' : 'rgba(248, 249, 244, 0.28)');
-          ctx.fill();
-        }
-      } else {
-        ctx.fillStyle = shape.color || (shape.id === effectiveSelectedShapeId ? 'rgba(239, 255, 27, 0.24)' : 'rgba(248, 249, 244, 0.28)');
-        ctx.fill();
-      }
+           ctx.drawImage(img, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
+            const shapeColor = resolveShapeColor(shape, accentColor);
+            const overlayOpacity = Math.max(0, Math.min(1, shape.overlayOpacity ?? 0));
+            if (overlayOpacity > 0 && shapeColor) {
+              ctx.globalAlpha = overlayOpacity;
+              ctx.fillStyle = shapeColor;
+              ctx.fillRect(-cw, -ch, cw * 2, ch * 2);
+              ctx.globalAlpha = 1;
+            }
+          } else {
+           ctx.fillStyle = resolveShapeColor(shape, accentColor) || (shape.id === effectiveSelectedShapeId ? accentColor : lightColor);
+           ctx.fill();
+         }
+       } else {
+         ctx.fillStyle = resolveShapeColor(shape, accentColor) || (shape.id === effectiveSelectedShapeId ? accentColor : lightColor);
+         ctx.fill();
+       }
 
       ctx.restore();
 
@@ -755,7 +1136,7 @@ export default function App() {
       }
       ctx.closePath();
       ctx.lineWidth = shape.id === effectiveSelectedShapeId ? 3.5 : 2;
-      ctx.strokeStyle = shape.id === effectiveSelectedShapeId ? '#ffffff' : (shape.color || 'rgba(248, 249, 244, 0.7)');
+       ctx.strokeStyle = shape.id === effectiveSelectedShapeId ? lightColor : resolveShapeColor(shape, accentColor);
       ctx.stroke();
 
       // Vertex handles on selected shape in IDLE mode
@@ -764,32 +1145,20 @@ export default function App() {
           const [vx, vy] = toPx(v[0], v[1]);
           ctx.beginPath();
           ctx.arc(vx, vy, 6, 0, Math.PI * 2);
-          ctx.fillStyle = '#ffffff';
-          ctx.fill();
-          ctx.strokeStyle = '#000000';
+           ctx.fillStyle = lightColor;
+           ctx.fill();
+           ctx.strokeStyle = 'rgba(0, 0, 0, 0.82)';
           ctx.lineWidth = 2;
           ctx.stroke();
         });
       }
 
-      // Shape label at centroid
-      const center = getPolygonCenter(shape.vertices);
-      const [lblX, lblY] = toPx(center[0], center[1]);
-      ctx.save();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(0,0,0,0.85)';
-      ctx.shadowBlur = 5;
-      ctx.fillText(shape.name || 'Shape', lblX, lblY);
-      ctx.restore();
     });
 
     // 3. Draw Snapping Indicators
     if (previewCursor && (previewCursor.snapX || previewCursor.snapY) && (editorState === 'DRAWING' || dragRef.current?.active)) {
       ctx.save();
-      ctx.strokeStyle = 'rgba(239, 255, 27, 0.86)';
+       ctx.strokeStyle = accentColor;
       ctx.lineWidth = 2;
       ctx.beginPath();
       const px = previewCursor.x * cw;
@@ -804,7 +1173,7 @@ export default function App() {
       }
       ctx.stroke();
 
-      ctx.fillStyle = '#efff1b';
+       ctx.fillStyle = accentColor;
       ctx.beginPath();
       ctx.arc(px, py, 5, 0, Math.PI * 2);
       ctx.fill();
@@ -827,16 +1196,16 @@ export default function App() {
       }
 
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = '#efff1b';
+       ctx.strokeStyle = accentColor;
       ctx.setLineDash([6, 6]);
       ctx.stroke();
       ctx.setLineDash([]);
 
       for (let i = 0; i < drawingShape.length; i++) {
         const pt = toPx(drawingShape[i][0], drawingShape[i][1]);
-        ctx.fillStyle = i === 0 ? '#ffffff' : '#efff1b';
+         ctx.fillStyle = i === 0 ? lightColor : accentColor;
         ctx.fillRect(pt[0] - 5, pt[1] - 5, 10, 10);
-        ctx.strokeStyle = '#000000';
+         ctx.strokeStyle = 'rgba(0, 0, 0, 0.82)';
         ctx.lineWidth = 1.5;
         ctx.strokeRect(pt[0] - 5, pt[1] - 5, 10, 10);
       }
@@ -860,7 +1229,7 @@ export default function App() {
       ctx.fillText('Canvas Active • Click "+ Draw Shape" to place polygon masks', cw / 2, ch / 2);
       ctx.restore();
     }
-  }, [openModal, project, drawingShape, editorState, selectedShapeId, previewCursor, canvasTick, canvasResizeCount]);
+   }, [openModal, project, drawingShape, editorState, selectedShapeId, previewCursor, canvasTick, canvasResizeCount, highlightColor, secondaryColor]);
 
   // ═══════════════════════════════════════════════════════════════
   // 4. QUALITY HANDLERS
@@ -875,6 +1244,7 @@ export default function App() {
       await setResolutionScale(scale);
       await saveQualitySetting('resolutionScale', scale);
     }
+    await saveResolutionMode(resolutionModes[nextIdx]);
   };
 
   const handleCycleFps = async () => {
@@ -906,7 +1276,7 @@ export default function App() {
       });
       if (typeof selected === 'string') {
         const imported = await importWallpaper(selected);
-        applyImageToEffect(effect, imageKey, imported);
+        await applyImageToEffect(effect, imageKey, imported);
       }
     } catch (err) {
       console.error('Failed to import image:', err);
@@ -914,29 +1284,31 @@ export default function App() {
   };
 
   const applyImageToEffect = async (effect: string, imageKey: string, path: string) => {
+    const engineId = EFFECT_TO_ENGINE_ID[effect];
+
+    if (effect === 'Depth Parallax' && imageKey === 'testWallpaper') {
+      setEffectImages(prev => ({
+        ...prev,
+        [effect]: { ...prev[effect], testWallpaper: path, depthMap: null },
+      }));
+      try {
+        const depthMap = await ensureDepthMap(path);
+        if (engineId) {
+          await saveEffectSettings(engineId, { testWallpaper: path, depthMap });
+        }
+      } catch (err) {
+        console.error('Depth generation failed:', err);
+      }
+      return;
+    }
+
     setEffectImages(prev => ({
       ...prev,
       [effect]: { ...prev[effect], [imageKey]: path },
     }));
 
-    // For Depth Parallax: auto-generate depth map
-    if (effect === 'Depth Parallax' && imageKey === 'testWallpaper') {
-      setIsGeneratingDepth(true);
-      setDepthError(null);
-      try {
-        await generateDepthMap(path);
-      } catch (err: any) {
-        setDepthError('Depth generation failed: ' + err.toString());
-      } finally {
-        setIsGeneratingDepth(false);
-      }
-    }
-
-    // Save to store
-    const engineId = EFFECT_TO_ENGINE_ID[effect];
     if (engineId) {
-      const savePayload: Record<string, any> = { [imageKey]: path };
-      await saveEffectSettings(engineId, savePayload);
+      await saveEffectSettings(engineId, { [imageKey]: path });
     }
   };
 
@@ -952,45 +1324,81 @@ export default function App() {
       }
     }));
 
-    // Debounced real-time IPC push
-    if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
-    debounceTimer.current = window.setTimeout(() => setSetting(paramKey, value), 50);
+    // Only push live values to the renderer when this is the effect currently
+    // running. A selected-but-inactive effect must not mutate another plugin's
+    // global setting before the user activates it.
+    if (activeEffect === selectedEffect) {
+      if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
+      debounceTimer.current = window.setTimeout(() => {
+        void setSetting(paramKey, value).catch((err) => {
+          console.warn(`Failed to update ${selectedEffect} parameter ${paramKey}:`, err);
+        });
+      }, 50);
+    }
 
-    // Save effect settings
-    const current = { ...(effectParams[selectedEffect] || {}), [paramKey]: value };
     const engineId = EFFECT_TO_ENGINE_ID[selectedEffect];
-    if (engineId) saveEffectSettings(engineId, current);
+    if (engineId) {
+      // Persist only the changed key here. The store serializes these writes,
+      // so rapid slider events cannot overwrite one another with stale state.
+      void saveEffectSettings(engineId, { [paramKey]: value }).catch((err) => {
+        console.warn(`Failed to persist ${selectedEffect} parameter ${paramKey}:`, err);
+      });
+    }
   };
 
   const handleOutlineColorChange = (hex: string) => {
     setBOOutlineColor(hex);
     if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
-    debounceTimer.current = window.setTimeout(() => {
-      const r = parseInt(hex.slice(1, 3), 16) / 255.0;
-      const g = parseInt(hex.slice(3, 5), 16) / 255.0;
-      const b = parseInt(hex.slice(5, 7), 16) / 255.0;
-      setSetting('outlineColorR', r);
-      setSetting('outlineColorG', g);
-      setSetting('outlineColorB', b);
-    }, 50);
-    saveEffectSettings('brick_outline', { outlineColor: hex });
+    if (activeEffect === 'Brick Outline') {
+      debounceTimer.current = window.setTimeout(() => {
+        void Promise.all([
+          setSetting('outlineColorR', parseInt(hex.slice(1, 3), 16) / 255.0),
+          setSetting('outlineColorG', parseInt(hex.slice(3, 5), 16) / 255.0),
+          setSetting('outlineColorB', parseInt(hex.slice(5, 7), 16) / 255.0),
+        ]).catch((err) => console.warn('Failed to update Brick Outline color:', err));
+      }, 50);
+    }
+    void saveEffectSettings('brick_outline', { outlineColor: hex }).catch((err) => {
+      console.warn('Failed to persist Brick Outline color:', err);
+    });
   };
 
   const handleFadeWhenRestingChange = (checked: boolean) => {
     setCRFadeWhenResting(checked);
-    setSetting('fadeWhenResting', checked ? 1 : 0);
-    saveEffectSettings('cursor_reveal', { fadeWhenResting: checked ? 1 : 0 });
+    if (activeEffect === 'Cursor Reveal') {
+      void setSetting('fadeWhenResting', checked ? 1 : 0).catch((err) => {
+        console.warn('Failed to update Cursor Reveal resting behavior:', err);
+      });
+    }
+    void saveEffectSettings('cursor_reveal', { fadeWhenResting: checked ? 1 : 0 }).catch((err) => {
+      console.warn('Failed to persist Cursor Reveal resting behavior:', err);
+    });
+  };
+
+  const handleSelectEffect = (effect: string) => {
+    if (debounceTimer.current) {
+      window.clearTimeout(debounceTimer.current);
+      debounceTimer.current = null;
+    }
+    setSelectedEffect(effect);
   };
 
   // ═══════════════════════════════════════════════════════════════
   // 7. ACTIVATE EFFECT (per-effect logic)
   // ═══════════════════════════════════════════════════════════════
   const handleActivateEffect = async () => {
+    if (isActivatingEffect || !settingsLoaded) return;
+    if (debounceTimer.current) {
+      window.clearTimeout(debounceTimer.current);
+      debounceTimer.current = null;
+    }
     const engineId = EFFECT_TO_ENGINE_ID[selectedEffect];
     if (!engineId) return;
 
     const images = effectImages[selectedEffect] || {};
 
+    desktopOperationRef.current++;
+    setIsActivatingEffect(true);
     try {
       // ── Per-effect layerA / layerB logic ──
       if (selectedEffect === 'Cursor Reveal') {
@@ -1002,7 +1410,6 @@ export default function App() {
           alert('One or both wallpaper files are missing. Please import them again.');
           return;
         }
-        await applyWallpaper(images.layerA, images.layerB);
       } else if (selectedEffect === 'Depth Parallax') {
         if (!images.testWallpaper) {
           alert('Please import a wallpaper image first.');
@@ -1012,8 +1419,8 @@ export default function App() {
           alert('Wallpaper file is missing or was deleted. Please import it again.');
           return;
         }
-        const depthImage = images.testWallpaper.replace(/\.[^/.]+$/, '') + '_depth.png';
-        await applyWallpaper(images.testWallpaper, depthImage);
+        const depthImage = await ensureDepthMap(images.testWallpaper, images.depthMap);
+        images.depthMap = depthImage;
       } else {
         // Single-image effects
         const baseImage = images.baseImage;
@@ -1025,11 +1432,19 @@ export default function App() {
           alert('Wallpaper file is missing or was deleted. Please import it again.');
           return;
         }
-        await applyWallpaper(baseImage, '');
       }
 
-      // ── Set the shader effect ──
+      // Select the plugin before applying textures so the renderer always
+      // receives the new wallpaper through the correct effect.
       await applyEffectEngine(engineId);
+
+      if (selectedEffect === 'Cursor Reveal') {
+        await applyWallpaper(images.layerA!, images.layerB!);
+      } else if (selectedEffect === 'Depth Parallax') {
+        await applyWallpaper(images.testWallpaper!, images.depthMap!);
+      } else {
+        await applyWallpaper(images.baseImage!, '');
+      }
 
       // ── Push all slider parameters to backend ──
       const params = effectParams[selectedEffect] || {};
@@ -1061,7 +1476,7 @@ export default function App() {
                      selectedEffect === 'Depth Parallax' ? images.testWallpaper || '' :
                      images.baseImage || '';
       const layerB = selectedEffect === 'Cursor Reveal' ? images.layerB || '' :
-                     selectedEffect === 'Depth Parallax' ? (images.testWallpaper || '').replace(/\.[^/.]+$/, '') + '_depth.png' :
+                     selectedEffect === 'Depth Parallax' ? images.depthMap || '' :
                      '';
       await saveActiveSession({ effect: engineId, layerA, layerB });
 
@@ -1074,10 +1489,13 @@ export default function App() {
     } catch (err) {
       console.error('Failed to activate effect:', err);
       alert('Failed to activate effect: ' + err);
+    } finally {
+      setIsActivatingEffect(false);
     }
   };
 
   const handleStopEffect = async () => {
+    desktopOperationRef.current++;
     try {
       await removeEffect();
       setActiveEffect(null);
@@ -1126,18 +1544,31 @@ export default function App() {
 
   const handleActivate3D = async () => {
     if (!webModelPath) { alert('Please select a 3D .glb model first.'); return; }
+    if (isActivatingWeb) return;
+
+    desktopOperationRef.current++;
+    setIsActivatingWeb(true);
+    setWebStatus('Preparing desktop surface…');
     try {
       await startWebWallpaper(webModelPath, webBgType, webBgColor, webBgImage || undefined, webSens, webZoom, webHOff, webVOff, true, 0, 0);
+
+      setWebStatus('Waiting for Web wallpaper to attach…');
+      await waitForWebWallpaperReady();
+
       setWebStatus('Running on Desktop');
       await saveActiveSession({ effect: 'web-wallpaper', layerA: '', layerB: '' });
       setOpenModal(null);
     } catch (err) {
       console.error('Failed to start 3D wallpaper:', err);
-      alert('Failed to start 3D wallpaper: ' + err);
+      setWebStatus('Activation failed');
+      alert('Failed to start 3D wallpaper: ' + (err instanceof Error ? err.message : err));
+    } finally {
+      setIsActivatingWeb(false);
     }
   };
 
   const handleStop3D = async () => {
+    desktopOperationRef.current++;
     try {
       await stopWebWallpaper();
       setWebStatus('Standby');
@@ -1167,9 +1598,14 @@ export default function App() {
   // ═══════════════════════════════════════════════════════════════
   const handleToggleAutostart = async () => {
     try {
-      if (autostartEnabled) { await disableAuto(); setAutostartEnabled(false); }
-      else { await enableAuto(); setAutostartEnabled(true); }
-    } catch (err) { console.error('Failed to toggle autostart:', err); }
+      setAutostartError(null);
+      if (autostartEnabled) await disableAuto();
+      else await enableAuto();
+      setAutostartEnabled(await isAutoEnabled());
+    } catch (err) {
+      console.error('Failed to toggle autostart:', err);
+      setAutostartError('Could not update Windows startup registration.');
+    }
   };
 
   const handleUpdateSetting = async (key: keyof AppSettings, val: any) => {
@@ -1234,6 +1670,7 @@ export default function App() {
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     const [snappedNx, snappedNy] = getSnappedNormalizedMousePos(e);
     const [rawNx, rawNy] = getNormalizedMousePos(e);
 
@@ -1295,11 +1732,12 @@ export default function App() {
       setSelectedShapeId(clickedShapeId);
     }
 
-    // 3. Initiate pan (for image) or move (for untextured shape)
+    // 3. Image layers use direct mouse gestures by default. Hold Alt/Ctrl to
+    // move the polygon mask instead of the image inside it.
     if (clickedShapeId) {
       const clickedShape = project.shapes.find(s => s.id === clickedShapeId);
       if (clickedShape) {
-        if (clickedShape.imagePath) {
+        if (clickedShape.imagePath && !e.altKey && !e.ctrlKey) {
           dragRef.current = {
             active: true,
             mode: 'pan',
@@ -1343,6 +1781,15 @@ export default function App() {
           return s;
         })
       }));
+      projectRef.current = {
+        ...projectRef.current,
+        shapes: projectRef.current.shapes.map(s => {
+          if (s.id !== dragRef.current!.shapeId) return s;
+          const newVertices = [...s.vertices];
+          newVertices[dragRef.current!.vertexIdx!] = [snappedNx, snappedNy];
+          return { ...s, vertices: newVertices };
+        }),
+      };
       return;
     }
 
@@ -1365,6 +1812,12 @@ export default function App() {
           return s;
         })
       }));
+      projectRef.current = {
+        ...projectRef.current,
+        shapes: projectRef.current.shapes.map(s => s.id === dragRef.current!.shapeId
+          ? { ...s, transform: { ...s.transform, panX: dragRef.current!.initialPanX! + dx, panY: dragRef.current!.initialPanY! + dy } }
+          : s),
+      };
       return;
     }
 
@@ -1384,23 +1837,37 @@ export default function App() {
           return s;
         })
       }));
+      projectRef.current = {
+        ...projectRef.current,
+        shapes: projectRef.current.shapes.map(s => {
+          if (s.id !== dragRef.current!.shapeId) return s;
+          const moved = dragRef.current!.initialVertices!.map(([vx, vy]) => [
+            Math.max(0, Math.min(1, vx + dx)),
+            Math.max(0, Math.min(1, vy + dy))
+          ] as [number, number]);
+          return { ...s, vertices: moved };
+        }),
+      };
       return;
     }
   };
 
-  const handleCanvasPointerUp = () => {
+  const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (dragRef.current?.active) {
       dragRef.current.active = false;
-      commitHistory(project);
-      saveProject(project);
+      commitHistory(projectRef.current);
+      saveProject(projectRef.current);
+    }
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
     }
   };
 
   const handleCanvasPointerLeave = () => {
     if (dragRef.current?.active) {
       dragRef.current.active = false;
-      commitHistory(project);
-      saveProject(project);
+      commitHistory(projectRef.current);
+      saveProject(projectRef.current);
     }
     setPreviewCursor(null);
   };
@@ -1461,17 +1928,19 @@ export default function App() {
     if (drawingShape.length < 3) return;
     const newShape: Shape = {
       id: `shape-${Date.now()}`,
-      name: `Shape ${project.shapes.length + 1}`,
+      name: `Shape ${projectRef.current.shapes.length + 1}`,
       vertices: drawingShape,
       imagePath: null,
       transform: { panX: 0, panY: 0, zoom: 1, rotate: 0 },
-      color: '#efff1b'
+      color: highlightColor,
+      overlayOpacity: 0.18,
     };
     const nextProj: Project = {
-      ...project,
-      shapes: [...project.shapes, newShape]
+      ...projectRef.current,
+      shapes: [...projectRef.current.shapes, newShape]
     };
     setProject(nextProj);
+    projectRef.current = nextProj;
     commitHistory(nextProj);
     saveProject(nextProj);
     setSelectedShapeId(newShape.id);
@@ -1479,47 +1948,78 @@ export default function App() {
     setEditorState('IDLE');
   };
 
-  const handleAssignShapeImage = async (shapeId: string) => {
+  const importShapeImage = async (): Promise<string | null> => {
     try {
       const selected = await open({
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
         multiple: false,
       });
       if (typeof selected === 'string') {
-        const imported = await importWallpaper(selected);
-        const nextProj: Project = {
-          ...project,
-          shapes: project.shapes.map(s =>
-            s.id === shapeId ? { ...s, imagePath: imported } : s
-          )
-        };
-        setProject(nextProj);
-        commitHistory(nextProj);
-        saveProject(nextProj);
+        return await importWallpaper(selected);
       }
     } catch (err) {
       console.error('Failed to import shape image:', err);
     }
+    return null;
+  };
+
+  const handleAssignShapeImage = async (shapeId: string) => {
+    const imported = await importShapeImage();
+    if (!imported) return;
+    const nextProj: Project = {
+      ...projectRef.current,
+      shapes: projectRef.current.shapes.map(s =>
+        s.id === shapeId ? { ...s, imagePath: imported, overlayOpacity: s.overlayOpacity ?? 0.18 } : s
+      )
+    };
+    setProject(nextProj);
+    projectRef.current = nextProj;
+    commitHistory(nextProj);
+    saveProject(nextProj);
+  };
+
+  const handleAddImageShape = async () => {
+    const imported = await importShapeImage();
+    if (!imported) return;
+    const count = projectRef.current.shapes.length;
+    const inset = Math.min(0.08 + count * 0.025, 0.24);
+    const newShape: Shape = {
+      id: `shape-${Date.now()}`,
+      name: `Image ${count + 1}`,
+      vertices: [[inset, inset], [1 - inset, inset], [1 - inset, 1 - inset], [inset, 1 - inset]],
+      imagePath: imported,
+      transform: { panX: 0, panY: 0, zoom: 1, rotate: 0 },
+      color: highlightColor,
+      overlayOpacity: 0,
+    };
+    const nextProj: Project = { ...projectRef.current, shapes: [...projectRef.current.shapes, newShape] };
+    setProject(nextProj);
+    projectRef.current = nextProj;
+    commitHistory(nextProj);
+    await saveProject(nextProj);
+    setSelectedShapeId(newShape.id);
   };
 
   const handleClearShapeImage = (shapeId: string) => {
     const nextProj: Project = {
-      ...project,
-      shapes: project.shapes.map(s =>
+      ...projectRef.current,
+      shapes: projectRef.current.shapes.map(s =>
         s.id === shapeId ? { ...s, imagePath: null } : s
       )
     };
     setProject(nextProj);
+    projectRef.current = nextProj;
     commitHistory(nextProj);
     saveProject(nextProj);
   };
 
   const handleDeleteShape = (shapeId: string) => {
     const nextProj: Project = {
-      ...project,
-      shapes: project.shapes.filter(s => s.id !== shapeId)
+      ...projectRef.current,
+      shapes: projectRef.current.shapes.filter(s => s.id !== shapeId)
     };
     setProject(nextProj);
+    projectRef.current = nextProj;
     commitHistory(nextProj);
     saveProject(nextProj);
     if (selectedShapeId === shapeId) {
@@ -1529,12 +2029,25 @@ export default function App() {
 
   const handleUpdateShapeColor = (shapeId: string, color: string) => {
     const nextProj: Project = {
-      ...project,
-      shapes: project.shapes.map(s =>
+      ...projectRef.current,
+      shapes: projectRef.current.shapes.map(s =>
         s.id === shapeId ? { ...s, color } : s
       )
     };
     setProject(nextProj);
+    projectRef.current = nextProj;
+    saveProject(nextProj);
+  };
+
+  const handleUpdateShapeOverlay = (shapeId: string, overlayOpacity: number) => {
+    const nextProj: Project = {
+      ...projectRef.current,
+      shapes: projectRef.current.shapes.map(s =>
+        s.id === shapeId ? { ...s, overlayOpacity } : s
+      )
+    };
+    setProject(nextProj);
+    projectRef.current = nextProj;
     saveProject(nextProj);
   };
 
@@ -1543,10 +2056,11 @@ export default function App() {
       const nextProj: Project = {
         ...prev,
         shapes: prev.shapes.map(s =>
-          s.id === shapeId ? { ...s, transform: { ...s.transform, ...partial } } : s
-        )
-      };
-      saveProject(nextProj);
+           s.id === shapeId ? { ...s, transform: { ...s.transform, ...partial } } : s
+         )
+       };
+       projectRef.current = nextProj;
+       saveProject(nextProj);
       return nextProj;
     });
   };
@@ -1560,10 +2074,11 @@ export default function App() {
       if (typeof selected === 'string') {
         const imported = await importWallpaper(selected);
         const nextProj: Project = {
-          ...project,
-          background: { ...project.background, type: 'image', value: imported }
+          ...projectRef.current,
+          background: { ...projectRef.current.background, type: 'image', value: imported }
         };
         setProject(nextProj);
+        projectRef.current = nextProj;
         commitHistory(nextProj);
         saveProject(nextProj);
       }
@@ -1574,45 +2089,63 @@ export default function App() {
 
   const handleSetBgType = (type: 'color' | 'image') => {
     const nextProj: Project = {
-      ...project,
-      background: { ...project.background, type }
+      ...projectRef.current,
+      background: { ...projectRef.current.background, type }
     };
     setProject(nextProj);
+    projectRef.current = nextProj;
     commitHistory(nextProj);
     saveProject(nextProj);
   };
 
   const handleSetBgColor = (color: string) => {
     const nextProj: Project = {
-      ...project,
-      background: { ...project.background, type: 'color', value: color }
+      ...projectRef.current,
+      background: { ...projectRef.current.background, type: 'color', value: color }
     };
     setProject(nextProj);
+    projectRef.current = nextProj;
     saveProject(nextProj);
   };
 
   const handleSetBgFit = (fit: 'cover' | 'contain' | 'stretch' | 'tile') => {
     const nextProj: Project = {
-      ...project,
-      background: { ...project.background, fit }
+      ...projectRef.current,
+      background: { ...projectRef.current.background, fit }
     };
     setProject(nextProj);
+    projectRef.current = nextProj;
     commitHistory(nextProj);
     saveProject(nextProj);
   };
 
-  const handleClearAllCanvas = () => {
-    if (confirm("Are you sure you want to clear all shapes from the canvas?")) {
+  const handleClearAllCanvas = async () => {
+    if (confirm("Clear the canvas background and all image/shape layers?")) {
+      const current = projectRef.current;
       const clearedProject: Project = {
-        ...project,
-        shapes: []
+        ...DEFAULT_PROJECT,
+        aspectRatio: current.aspectRatio || DEFAULT_PROJECT.aspectRatio,
+        background: { ...DEFAULT_PROJECT.background },
+        shapes: [],
       };
       setProject(clearedProject);
+      projectRef.current = clearedProject;
       commitHistory(clearedProject);
       saveProject(clearedProject);
       setSelectedShapeId(null);
       setDrawingShape([]);
       setEditorState('IDLE');
+      setPreviewCursor(null);
+      dragRef.current = null;
+      setHasPreviousCanvas(false);
+      setCanvasTick(t => t + 1);
+      try {
+        const store = await load('gallery-project.json');
+        await store.delete('canvas_previous_project');
+        await store.save();
+      } catch (err) {
+        console.error('Failed to clear previous canvas backup:', err);
+      }
     }
   };
 
@@ -1649,6 +2182,7 @@ export default function App() {
 
     // 1. Draw Background
     const defaultBgColor = '#242825';
+    const accentColor = highlightColor;
     if (project.background.type === 'color') {
       ctx.fillStyle = project.background.value || defaultBgColor;
       ctx.fillRect(0, 0, cw, ch);
@@ -1721,15 +2255,23 @@ export default function App() {
           const scaledW = img.naturalWidth * defaultScale;
           const scaledH = img.naturalHeight * defaultScale;
 
-          ctx.drawImage(img, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
-        } else {
-          ctx.fillStyle = shape.color || 'rgba(255, 255, 255, 0.1)';
-          ctx.fill();
-        }
-      } else {
-        ctx.fillStyle = shape.color || 'rgba(255, 255, 255, 0.1)';
-        ctx.fill();
-      }
+           ctx.drawImage(img, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
+            const shapeColor = resolveShapeColor(shape, accentColor);
+            const overlayOpacity = Math.max(0, Math.min(1, shape.overlayOpacity ?? 0));
+            if (overlayOpacity > 0 && shapeColor) {
+              ctx.globalAlpha = overlayOpacity;
+              ctx.fillStyle = shapeColor;
+              ctx.fillRect(-cw, -ch, cw * 2, ch * 2);
+              ctx.globalAlpha = 1;
+            }
+          } else {
+           ctx.fillStyle = resolveShapeColor(shape, accentColor);
+           ctx.fill();
+         }
+       } else {
+         ctx.fillStyle = resolveShapeColor(shape, accentColor);
+         ctx.fill();
+       }
 
       ctx.restore();
 
@@ -1743,7 +2285,7 @@ export default function App() {
       }
       ctx.closePath();
       ctx.lineWidth = 3;
-      ctx.strokeStyle = shape.color || 'rgba(248, 249, 244, 0.64)';
+       ctx.strokeStyle = resolveShapeColor(shape, accentColor);
       ctx.stroke();
       ctx.restore();
     });
@@ -1755,14 +2297,21 @@ export default function App() {
   };
 
   const handleActivateCanvas = async () => {
+    desktopOperationRef.current++;
     try {
       setIsBaking(true);
       const bytes = await bakeCanvas();
       const savedPath = await saveBakedWallpaper('active-collage.png', bytes);
+      const savedProject = normalizeProject(projectRef.current);
+      projectRef.current = savedProject;
       const store = await load('gallery-project.json');
-      await store.set('project', project);
-      if (savedPath) await store.set(`baked_proj_${savedPath}`, project);
-      await store.set('baked_proj_active-collage.png', project);
+      await store.set('project', savedProject);
+      if (savedPath) {
+        await saveBakedProject(savedPath, savedProject);
+        await store.set(`baked_proj_${savedPath}`, savedProject);
+        await store.set(`baked_proj_${getPathFileName(savedPath)}`, savedProject);
+      }
+      await store.set('baked_proj_active-collage.png', savedProject);
       await store.save();
       await saveActiveSession({ layerA: savedPath, layerB: '', effect: 'none', isGalleryCollage: true });
       await removeEffect();
@@ -1785,10 +2334,16 @@ export default function App() {
       const bytes = await bakeCanvas();
       const filename = `gallery-${Date.now()}.png`;
       const savedPath = await saveBakedWallpaper(filename, bytes);
+      const savedProject = normalizeProject(projectRef.current);
+      projectRef.current = savedProject;
       const store = await load('gallery-project.json');
-      await store.set('project', project);
-      await store.set(`baked_proj_${filename}`, project);
-      if (savedPath) await store.set(`baked_proj_${savedPath}`, project);
+      await store.set('project', savedProject);
+      await store.set(`baked_proj_${filename}`, savedProject);
+      if (savedPath) {
+        await saveBakedProject(savedPath, savedProject);
+        await store.set(`baked_proj_${savedPath}`, savedProject);
+        await store.set(`baked_proj_${getPathFileName(savedPath)}`, savedProject);
+      }
       await store.save();
       const updated = await listWallpapers();
       setRealBakedWallpapers(updated);
@@ -1802,6 +2357,7 @@ export default function App() {
   };
 
   const handleActivateBakedWallpaper = async (path: string) => {
+    desktopOperationRef.current++;
     try {
       await saveActiveSession({ layerA: path, layerB: '', effect: 'none', isGalleryCollage: true });
       await removeEffect();
@@ -1817,7 +2373,7 @@ export default function App() {
   const handleDeleteBakedWallpaper = async (path: string) => {
     if (!confirm('Are you sure you want to delete this baked wallpaper from your library?')) return;
     try {
-      const filename = path.split('\\').pop() || '';
+      const filename = getPathFileName(path);
       const store = await load('gallery-project.json');
       await store.delete(`baked_proj_${path}`);
       if (filename) await store.delete(`baked_proj_${filename}`);
@@ -1839,10 +2395,15 @@ export default function App() {
   };
 
   const isActivateDisabled = (): boolean => {
+    if (!settingsLoaded) return true;
     const images = effectImages[selectedEffect] || {};
     if (selectedEffect === 'Cursor Reveal') return !images.layerA || !images.layerB;
     if (selectedEffect === 'Depth Parallax') return !images.testWallpaper || isGeneratingDepth;
     return !images.baseImage;
+  };
+
+  const closeModalFromBackdrop = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) setOpenModal(null);
   };
 
   // ═══════════════════════════════════════════════════════════════
@@ -1852,31 +2413,13 @@ export default function App() {
     <>
       {/* ─── SPLASH SCREEN ─── */}
       <div id="splash-screen" className={showSplash ? '' : 'hidden'}>
-        <div className="splash-logo-box">
-          <span className="splash-mark">G</span>
-          <span>GRAFFITI</span>
-        </div>
-        <div className="splash-sub">Your wallpaper workspace</div>
+          <div className="splash-logo-box" aria-label="Graffiti">
+            <img src="/logos/Graffiti_New_Logo_Transparent.png" alt="Graffiti" />
+          </div>
       </div>
 
       {/* ─── MAIN BENTO WORKSPACE ─── */}
       <main className="workspace-wrapper" aria-label="Graffiti wallpaper workspace">
-        <header className="studio-header">
-          <div className="brand-lockup">
-            <span className="brand-mark">G</span>
-            <div>
-              <div className="brand-name">GRAFFITI</div>
-              <div className="brand-note">Desktop wallpaper lab</div>
-            </div>
-          </div>
-          <div className="header-note">
-            <span className="live-led" />
-            <span>Offline by design</span>
-            <span className="header-divider">/</span>
-            <span>Build 1.0</span>
-          </div>
-        </header>
-
         {/* ═══════════════ CARD 1: EFFECTS STUDIO ═══════════════ */}
         <div className="card-effects-wrapper">
           {/* Quality Circle Badges */}
@@ -1914,7 +2457,7 @@ export default function App() {
               </div>
 
               {/* Per-effect image status display */}
-              <div className="effects-image-list">
+              <div className={`effects-image-list ${(EFFECT_IMAGE_KEYS[selectedEffect] || []).length > 1 ? 'multi-image-list' : ''}`}>
                 {(EFFECT_IMAGE_KEYS[selectedEffect] || []).map(imgKey => {
                   const path = getEffectImagePath(selectedEffect, imgKey);
                   const label = EFFECT_IMAGE_LABELS[selectedEffect]?.[imgKey] || imgKey;
@@ -1924,9 +2467,9 @@ export default function App() {
                       className="pill-select-btn image-select-btn"
                       onClick={() => handleImportImage(selectedEffect, imgKey)}
                     >
-                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+                      <span className="image-select-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
                         <span className="image-select-label">{EFFECT_IMAGE_KEYS[selectedEffect].length > 1 ? label : 'Choose image'}</span>
-                        <span>{path ? path.split('\\').pop() : (EFFECT_IMAGE_KEYS[selectedEffect].length > 1 ? 'Choose image' : 'Choose image')}</span>
+                        <span className="image-select-name">{path ? getPathFileName(path) : (EFFECT_IMAGE_KEYS[selectedEffect].length > 1 ? 'Choose image' : 'Choose image')}</span>
                       </span>
                       <span className="caret">{path ? 'Change' : 'Browse'}</span>
                     </button>
@@ -1942,7 +2485,7 @@ export default function App() {
               </div>
             )}
             {selectedEffect === 'Depth Parallax' && depthError && (
-              <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: '#c45c5c', fontWeight: 600 }}>
+              <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: 'var(--text-dark)', fontWeight: 600 }}>
                  Warning: {depthError}
               </div>
             )}
@@ -1952,13 +2495,14 @@ export default function App() {
                 className="btn-dark-pill"
                 id="btn-activate-effect"
                 onClick={handleActivateEffect}
-                disabled={isActivateDisabled()}
-                style={{ opacity: isActivateDisabled() ? 0.5 : 1 }}
+                disabled={isActivateDisabled() || isActivatingEffect}
+                style={{ opacity: isActivateDisabled() || isActivatingEffect ? 0.5 : 1 }}
               >
-                {isGeneratingDepth && selectedEffect === 'Depth Parallax' ? 'Generating…' :
+                {isActivatingEffect ? 'Applying…' :
+                 isGeneratingDepth && selectedEffect === 'Depth Parallax' ? 'Generating…' :
                  activeEffect === selectedEffect ? 'Re-Apply' : 'Activate'}
               </button>
-              <button className="btn-outline-pill" id="btn-stop-effect" onClick={handleStopEffect}>
+              <button className="btn-outline-pill" id="btn-stop-effect" onClick={handleStopEffect} disabled={isActivatingEffect}>
                 Stop Effect
               </button>
             </div>
@@ -1980,7 +2524,7 @@ export default function App() {
                       <button
                         key={name}
                         className={`effect-item-btn ${selectedEffect === name ? 'selected' : ''}`}
-                        onClick={() => { setSelectedEffect(name); setSidePopupView('sliders'); }}
+                        onClick={() => { handleSelectEffect(name); setSidePopupView('sliders'); }}
                       >
                         <span className="ef-name">{name}</span>
                         <span className="ef-sub">{EFFECTS_DATA[name].length} params</span>
@@ -1993,7 +2537,7 @@ export default function App() {
                 {sidePopupView === 'sliders' && (
                   <div className="sliders-list">
                     {/* Image Import Buttons */}
-                    <div style={{ marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className="sliders-image-imports" style={{ marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {(EFFECT_IMAGE_KEYS[selectedEffect] || []).map(imgKey => {
                         const path = getEffectImagePath(selectedEffect, imgKey);
                         const label = EFFECT_IMAGE_LABELS[selectedEffect]?.[imgKey] || imgKey;
@@ -2004,9 +2548,9 @@ export default function App() {
                             onClick={() => handleImportImage(selectedEffect, imgKey)}
                             style={{ fontSize: '0.82rem' }}
                           >
-                            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '1px' }}>
+                            <span className="image-select-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '1px' }}>
                               <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
-                              <span>{path ? path.split('\\').pop() : 'Import Image…'}</span>
+                              <span className="image-select-name">{path ? getPathFileName(path) : 'Import Image…'}</span>
                             </span>
                             <span className="caret" style={{ fontSize: '0.72rem' }}>Browse</span>
                           </button>
@@ -2020,7 +2564,7 @@ export default function App() {
                         </div>
                       )}
                       {selectedEffect === 'Depth Parallax' && depthError && (
-                        <div style={{ fontSize: '0.76rem', color: '#c45c5c', fontWeight: 500, padding: '4px 0' }}>
+                        <div style={{ fontSize: '0.76rem', color: 'var(--text-dark)', fontWeight: 500, padding: '4px 0' }}>
                           {depthError}
                         </div>
                       )}
@@ -2155,7 +2699,7 @@ export default function App() {
         {/* ═══════════════ CARD 4: SETTINGS / THEME / ABOUT ═══════════════ */}
         <div className="subgrid-three">
           <button className="mini-card-settings" onClick={() => setOpenModal('settings-page')}>
-            <div className="settings-circle-badge">Open</div>
+            <div className="settings-circle-badge" aria-hidden="true"><SettingsIcon size={31} strokeWidth={2.25} /></div>
             <div className="settings-card-text">
               <div className="s-title">Settings</div>
               <div className="s-sub">Startup & power rules</div>
@@ -2172,18 +2716,11 @@ export default function App() {
             </div>
           </button>
 
-          <button className="mini-card-about" onClick={() => setOpenModal('modal-about')}>
-            <div className="about-corner-badge">Read</div>
-            <div className="about-top-header">
-              <div className="about-white-circle">v2</div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, lineHeight: 1.25 }}>Documentation<br />& Memory Guide</div>
-            </div>
-            <div className="about-card-footer">
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Complete Guide</div>
-              <div className="about-stat-big">About</div>
-              <div className="about-card-meta">6 effects · memory · next update</div>
-            </div>
-          </button>
+          <div className="mini-card-about">
+            <button className="about-bottom-trigger" onClick={() => setOpenModal('modal-about')}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 700 }}>Workspace guide</div>
+            </button>
+          </div>
         </div>
       </main>
 
@@ -2196,7 +2733,7 @@ export default function App() {
         const selectedShape = project.shapes.find(s => s.id === effectiveSelectedShapeId) || null;
 
         return (
-          <div className="modal-backdrop">
+          <div className="modal-backdrop" onMouseDown={closeModalFromBackdrop}>
             <div className="popup-window large">
               <div className="popup-top-bar">
                 <h2>Canvas Studio</h2>
@@ -2204,6 +2741,7 @@ export default function App() {
               </div>
 
               <div className="canvas-workspace-grid">
+                <div className="canvas-editor-column">
                 <div className="drawing-board-container" ref={canvasContainerRef}>
                   <div style={{
                     position: 'absolute',
@@ -2230,7 +2768,9 @@ export default function App() {
                     style={{
                       cursor: editorState === 'DRAWING'
                         ? 'crosshair'
-                        : (dragRef.current?.active ? 'grabbing' : 'default')
+                        : (dragRef.current?.active
+                          ? 'grabbing'
+                          : (selectedShape?.imagePath ? 'grab' : 'default'))
                     }}
                     onPointerDown={handleCanvasPointerDown}
                     onPointerMove={handleCanvasPointerMove}
@@ -2238,10 +2778,11 @@ export default function App() {
                     onPointerLeave={handleCanvasPointerLeave}
                     onWheel={handleCanvasWheel}
                   />
-                  <div className="canvas-bottom-toolbar">
+                </div>
+                <div className="canvas-bottom-toolbar">
                     {editorState === 'DRAWING' ? (
                       <>
-                        <span style={{ color: '#ffffff', fontSize: '0.78rem', padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ color: 'var(--secondary)', fontSize: '0.78rem', padding: '0 8px', display: 'flex', alignItems: 'center' }}>
                           Click to place points ({drawingShape.length}). Click start or Complete.
                         </span>
                         <button
@@ -2282,17 +2823,18 @@ export default function App() {
                             onClick={async () => {
                               try {
                                 const store = await load('gallery-project.json');
-                                const prev = await store.get<Project>('canvas_previous_project');
-                                if (prev) {
-                                  await store.set('canvas_previous_project', project);
-                                  setProject(prev);
-                                  commitHistory(prev);
-                                  await saveProject(prev);
-                                  await store.save();
-                                  if (prev.shapes.length > 0) {
-                                    setSelectedShapeId(prev.shapes[0].id);
-                                  }
-                                }
+                                 const prev = await store.get<Project>('canvas_previous_project');
+                                 if (prev) {
+                                   const current = normalizeProject(projectRef.current);
+                                   const restored = normalizeProject(prev);
+                                   await store.set('canvas_previous_project', current);
+                                   setProject(restored);
+                                   projectRef.current = restored;
+                                   commitHistory(restored);
+                                   await saveProject(restored);
+                                   await store.save();
+                                   setSelectedShapeId(restored.shapes[0]?.id || null);
+                                 }
                               } catch (err) {
                                 console.error('Failed to restore previous canvas shapes:', err);
                               }
@@ -2305,6 +2847,9 @@ export default function App() {
                         )}
                         <button className="toolbar-btn highlight" onClick={startDrawing}>
                           + Draw Shape
+                        </button>
+                        <button className="toolbar-btn" onClick={handleAddImageShape}>
+                          + Image Layer
                         </button>
                         <button className="toolbar-btn" onClick={handleClearAllCanvas} style={{ color: '#ff6b6b' }}>
                           Clear
@@ -2325,7 +2870,7 @@ export default function App() {
                         </button>
                       </>
                     )}
-                  </div>
+                </div>
                 </div>
 
                 <div className="canvas-sidebar">
@@ -2337,8 +2882,9 @@ export default function App() {
                       <select
                         value={project.aspectRatio || 'auto'}
                         onChange={(e) => {
-                          const next: Project = { ...project, aspectRatio: e.target.value };
+                          const next: Project = { ...projectRef.current, aspectRatio: e.target.value };
                           setProject(next);
+                          projectRef.current = next;
                           commitHistory(next);
                           saveProject(next);
                         }}
@@ -2346,7 +2892,7 @@ export default function App() {
                           padding: '5px 8px',
                           borderRadius: '8px',
                           border: '1px solid var(--border-soft)',
-                          background: '#f4f6f4',
+                           background: 'var(--secondary)',
                           fontSize: '0.78rem',
                           fontWeight: 600,
                           maxWidth: '160px'
@@ -2407,7 +2953,7 @@ export default function App() {
                               padding: '5px 8px',
                               borderRadius: '8px',
                               border: '1px solid var(--border-soft)',
-                              background: '#f4f6f4',
+                               background: 'var(--secondary)',
                               fontSize: '0.78rem'
                             }}
                           >
@@ -2435,7 +2981,7 @@ export default function App() {
                             className="shape-pill-item"
                             onClick={() => setSelectedShapeId(s.id)}
                             style={{
-                              background: s.id === effectiveSelectedShapeId ? 'var(--highlight)' : 'var(--bg-card)',
+                               background: s.id === effectiveSelectedShapeId ? 'var(--highlight)' : 'var(--secondary)',
                               color: s.id === effectiveSelectedShapeId ? 'var(--text-dark)' : 'inherit',
                               fontWeight: s.id === effectiveSelectedShapeId ? 700 : 500,
                               cursor: 'pointer',
@@ -2444,7 +2990,7 @@ export default function App() {
                             }}
                           >
                             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: s.color || '#efff1b', display: 'inline-block', border: '1px solid rgba(0,0,0,0.2)' }} />
+                               <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: resolveShapeColor(s, highlightColor), display: 'inline-block', border: '1px solid rgba(0,0,0,0.2)' }} />
                               {s.name}
                             </span>
                             <span className="shape-kind">{s.imagePath ? 'Image' : 'Solid'}</span>
@@ -2462,7 +3008,7 @@ export default function App() {
                         <button
                           onClick={() => handleDeleteShape(selectedShape.id)}
                           title="Delete shape"
-                          style={{ background: 'transparent', border: 'none', color: '#c45c5c', cursor: 'pointer', fontSize: '0.9rem' }}
+                           style={{ background: 'transparent', border: 'none', color: 'var(--text-dark)', cursor: 'pointer', fontSize: '0.9rem' }}
                         >
                           Delete
                         </button>
@@ -2471,10 +3017,28 @@ export default function App() {
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Fill Color</div>
                       <input
                         type="color"
-                        value={selectedShape.color || '#efff1b'}
+                         value={resolveShapeColor(selectedShape, highlightColor)}
                         onChange={(e) => handleUpdateShapeColor(selectedShape.id, e.target.value)}
                         style={{ width: '100%', height: '36px', border: 'none', borderRadius: '10px', cursor: 'pointer', marginBottom: '8px' }}
                       />
+
+                      {selectedShape.imagePath && (
+                        <div style={{ marginBottom: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: '4px' }}>
+                            <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Color Overlay</span>
+                            <strong style={{ color: 'var(--text-dark)' }}>{Math.round((selectedShape.overlayOpacity ?? 0) * 100)}%</strong>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={selectedShape.overlayOpacity ?? 0}
+                            onChange={(e) => handleUpdateShapeOverlay(selectedShape.id, parseFloat(e.target.value))}
+                            style={{ width: '100%', cursor: 'pointer' }}
+                          />
+                        </div>
+                      )}
 
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Image</div>
                       <button
@@ -2482,7 +3046,7 @@ export default function App() {
                         style={{ width: '100%', fontSize: '0.8rem' }}
                         onClick={() => handleAssignShapeImage(selectedShape.id)}
                       >
-                        <span>{selectedShape.imagePath ? selectedShape.imagePath.split('\\').pop() : 'Assign Image…'}</span>
+                        <span>{selectedShape.imagePath ? selectedShape.imagePath.split(/[\\/]/).pop() : 'Add Image…'}</span>
                         <span className="caret">Browse</span>
                       </button>
 
@@ -2493,59 +3057,8 @@ export default function App() {
                             style={{ width: '100%', marginTop: '6px', fontSize: '0.76rem' }}
                             onClick={() => handleClearShapeImage(selectedShape.id)}
                           >
-                            Clear Image
+                            Remove Image
                           </button>
-
-                          {/* Zoom Controls */}
-                          <div style={{ marginTop: '10px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', marginBottom: '4px' }}>
-                              <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Zoom</span>
-                              <strong style={{ color: 'var(--text-dark)' }}>{selectedShape.transform.zoom.toFixed(2)}x</strong>
-                            </div>
-                            <input
-                              type="range"
-                              min="0.1"
-                              max="5.0"
-                              step="0.01"
-                              value={selectedShape.transform.zoom}
-                              onChange={(e) => updateShapeTransform(selectedShape.id, { zoom: parseFloat(e.target.value) })}
-                              style={{ width: '100%', cursor: 'pointer' }}
-                            />
-                            <div className="transform-btn-group">
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Zoom Out (-0.1x)"
-                                onClick={() => updateShapeTransform(selectedShape.id, { zoom: Math.max(0.1, Number((selectedShape.transform.zoom - 0.1).toFixed(2))) })}
-                              >
-                                -0.1x
-                              </button>
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Reset Zoom (1.0x)"
-                                onClick={() => updateShapeTransform(selectedShape.id, { zoom: 1.0 })}
-                              >
-                                1.0x
-                              </button>
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Zoom In (+0.1x)"
-                                onClick={() => updateShapeTransform(selectedShape.id, { zoom: Math.min(5.0, Number((selectedShape.transform.zoom + 0.1).toFixed(2))) })}
-                              >
-                                +0.1x
-                              </button>
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Enlarge (2.0x)"
-                                onClick={() => updateShapeTransform(selectedShape.id, { zoom: 2.0 })}
-                              >
-                                2.0x
-                              </button>
-                            </div>
-                          </div>
 
                           {/* Rotation Controls */}
                           <div style={{ marginTop: '10px' }}>
@@ -2567,63 +3080,25 @@ export default function App() {
                               }}
                               style={{ width: '100%', cursor: 'pointer' }}
                             />
-                            <div className="transform-btn-group">
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Rotate Counter-Clockwise (-15°)"
-                                onClick={() => {
-                                  const curDeg = Math.round(selectedShape.transform.rotate * (180 / Math.PI));
-                                  const nextDeg = curDeg - 15;
-                                  updateShapeTransform(selectedShape.id, { rotate: (nextDeg * Math.PI) / 180 });
-                                }}
-                              >
-                                -15°
-                              </button>
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Reset Rotation (0°)"
-                                onClick={() => updateShapeTransform(selectedShape.id, { rotate: 0 })}
-                              >
-                                0°
-                              </button>
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Rotate Clockwise (+15°)"
-                                onClick={() => {
-                                  const curDeg = Math.round(selectedShape.transform.rotate * (180 / Math.PI));
-                                  const nextDeg = curDeg + 15;
-                                  updateShapeTransform(selectedShape.id, { rotate: (nextDeg * Math.PI) / 180 });
-                                }}
-                              >
-                                +15°
-                              </button>
-                              <button
-                                type="button"
-                                className="transform-step-btn"
-                                title="Rotate 90°"
-                                onClick={() => {
-                                  const curDeg = Math.round(selectedShape.transform.rotate * (180 / Math.PI));
-                                  const nextDeg = (curDeg + 90) % 360;
-                                  updateShapeTransform(selectedShape.id, { rotate: (nextDeg * Math.PI) / 180 });
-                                }}
-                              >
-                                90°
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              className="btn-outline-pill transform-reset-btn"
+                              title="Reset Rotation (0°)"
+                              onClick={() => updateShapeTransform(selectedShape.id, { rotate: 0 })}
+                            >
+                              Reset rotation
+                            </button>
                           </div>
 
-                          <div style={{ fontSize: '0.70rem', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.35, background: 'rgba(0,0,0,0.03)', padding: '6px 8px', borderRadius: '8px' }}>
-                            <strong>Tips:</strong> Scroll wheel to zoom. <strong>Shift</strong> + scroll wheel to rotate. Drag inside shape to pan. Drag corners to adjust vertices.
+                          <div className="canvas-gesture-help">
+                            <strong>Mouse controls:</strong> drag the image to position it, scroll to zoom, and use <strong>Shift + scroll</strong> to rotate. Hold <strong>Alt</strong> while dragging to move the mask; drag corners to reshape it.
                           </div>
                         </>
                       )}
 
                       <button
                         className="btn-outline-pill"
-                        style={{ width: '100%', marginTop: '8px', borderColor: '#c45c5c', color: '#c45c5c', fontSize: '0.76rem' }}
+                         style={{ width: '100%', marginTop: '8px', borderColor: 'var(--text-dark)', color: 'var(--text-dark)', fontSize: '0.76rem' }}
                         onClick={() => handleDeleteShape(selectedShape.id)}
                       >
                         Delete Shape
@@ -2639,7 +3114,7 @@ export default function App() {
 
       {/* ═══════════════ MODAL: BAKED WALLPAPERS ═══════════════ */}
       {openModal === 'modal-baked' && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" onMouseDown={closeModalFromBackdrop}>
           <div className="popup-window" style={{ maxWidth: '880px', width: '92%' }}>
             <div className="popup-top-bar">
               <h2>Baked Wallpapers</h2>
@@ -2696,7 +3171,7 @@ export default function App() {
                             background: 'transparent',
                             border: 'none',
                             cursor: 'pointer',
-                            color: '#c45c5c',
+                             color: 'var(--text-dark)',
                             padding: '4px 6px',
                             borderRadius: '6px',
                             fontSize: '0.85rem'
@@ -2719,40 +3194,58 @@ export default function App() {
                           onClick={async () => {
                             try {
                               const store = await load('gallery-project.json');
-                              const filename = path.split('\\').pop() || '';
+                               const filename = getPathFileName(path);
+                               const currentProject = normalizeProject(projectRef.current);
 
-                              // Save older canvas shapes state so user can always restore them!
-                              await store.set('canvas_previous_project', project);
-                              setHasPreviousCanvas(true);
+                               // Save older canvas shapes state so user can always restore them!
+                               await store.set('canvas_previous_project', currentProject);
+                               setHasPreviousCanvas(true);
 
-                              // Check if this baked wallpaper has saved project metadata
-                              let bakedProj = await store.get<Project>(`baked_proj_${path}`);
-                              if (!bakedProj && filename) {
-                                bakedProj = await store.get<Project>(`baked_proj_${filename}`);
-                              }
+                               // Prefer metadata stored beside the PNG. This keeps the
+                               // editable layer project tied to the baked file even if
+                               // the store key/path representation changes.
+                               let bakedProj: Project | null = null;
+                               try {
+                                 bakedProj = await loadBakedProject(path) as Project | null;
+                               } catch (_) {
+                                 // Older builds do not have the sidecar command; use the
+                                 // legacy store entries below.
+                               }
+                               if (!bakedProj) bakedProj = (await store.get<Project>(`baked_proj_${path}`)) ?? null;
+                               if (!bakedProj && filename) {
+                                 bakedProj = (await store.get<Project>(`baked_proj_${filename}`)) ?? null;
+                               }
 
-                              let nextProj: Project;
-                              if (bakedProj && bakedProj.shapes && bakedProj.shapes.length > 0) {
-                                nextProj = {
-                                  ...bakedProj,
-                                  version: "1.0",
-                                };
-                              } else {
-                                // Strictly keep existing shapes and update background image
-                                nextProj = {
-                                  ...project,
-                                  background: { ...project.background, type: 'image', value: path }
-                                };
-                              }
+                               let nextProj: Project;
+                               if (bakedProj) {
+                                 const normalizedBaked = normalizeProject(bakedProj);
+                                 // A metadata record with no layers still represents a flattened
+                                 // baked image. Open that PNG as the only editable layer rather
+                                 // than leaving the previous canvas underneath it.
+                                 nextProj = normalizedBaked.shapes.length > 0
+                                   ? normalizedBaked
+                                   : createBakedImageProject(path, normalizedBaked.aspectRatio || currentProject.aspectRatio);
+                               } else {
+                                 // Legacy builds did not write a project manifest. For files
+                                 // created by Graffiti, the current saved project is the best
+                                 // recoverable source for the individual layers. Only fall
+                                 // back to a single flattened layer when that source is not
+                                 // available; a PNG alone cannot be decomposed back into its
+                                 // original images.
+                                 const looksLikeGraffitiBake = /^gallery-\d+\.[^/.]+$/i.test(filename)
+                                   || filename.toLowerCase() === 'active-collage.png';
+                                 nextProj = looksLikeGraffitiBake && currentProject.shapes.length > 1
+                                   ? currentProject
+                                   : createBakedImageProject(path, currentProject.aspectRatio);
+                               }
 
-                              setProject(nextProj);
-                              commitHistory(nextProj);
-                              await saveProject(nextProj);
-                              await store.save();
-                              if (nextProj.shapes.length > 0) {
-                                setSelectedShapeId(nextProj.shapes[0].id);
-                              }
-                              setOpenModal('modal-canvas');
+                               setProject(nextProj);
+                               projectRef.current = nextProj;
+                               commitHistory(nextProj);
+                               await saveProject(nextProj);
+                               await store.save();
+                               setSelectedShapeId(nextProj.shapes[0]?.id || null);
+                               setOpenModal('modal-canvas');
                             } catch (err) {
                               console.error('Failed to open baked wallpaper in canvas:', err);
                             }
@@ -2772,11 +3265,11 @@ export default function App() {
 
       {/* ═══════════════ MODAL: WEB WALLPAPER ═══════════════ */}
       {openModal === 'modal-web' && (
-        <div className="modal-backdrop">
-          <div className="popup-window large" style={{ maxWidth: '1040px' }}>
+        <div className="modal-backdrop" onMouseDown={closeModalFromBackdrop}>
+          <div className="popup-window large" style={{ maxWidth: '1040px', position: 'relative' }} aria-busy={isActivatingWeb}>
             <div className="popup-top-bar">
               <h2>Set 3D Web Wallpaper Model</h2>
-              <button className="close-circle-x" onClick={() => setOpenModal(null)}>✕</button>
+              <button className="close-circle-x" onClick={() => setOpenModal(null)} disabled={isActivatingWeb}>✕</button>
             </div>
             <input type="file" ref={glbFileInputRef} accept=".glb,.gltf" style={{ display: 'none' }}
               onChange={(e) => { if (e.target.files?.[0]) setWebModelPath(URL.createObjectURL(e.target.files[0])); }} />
@@ -2848,17 +3341,30 @@ export default function App() {
                     style={{ width: '100%', height: '100%', minHeight: '380px', borderRadius: '22px' }} />
                 </div>
                 <button className="btn-dark-pill"
-                  style={{ background: 'var(--highlight)', color: 'var(--text-dark)', width: '100%', padding: '14px', fontSize: '0.92rem' }}
-                  onClick={handleActivate3D}>Activate 3D Wallpaper</button>
+                   style={{ background: 'var(--highlight)', color: 'var(--text-dark)', width: '100%', padding: '14px', fontSize: '0.92rem' }}
+                   onClick={handleActivate3D}
+                   disabled={isActivatingWeb}
+                 >{isActivatingWeb ? 'Applying Web Wallpaper…' : 'Activate 3D Wallpaper'}</button>
               </div>
             </div>
+
+            {isActivatingWeb && (
+              <div className="web-activation-overlay" role="status" aria-live="polite">
+                <div className="web-activation-panel">
+                  <div className="web-activation-spinner" aria-hidden="true" />
+                  <div className="web-activation-title">Applying to your desktop</div>
+                  <div className="web-activation-message">{webStatus}</div>
+                  <p>Keep Graffiti open while the desktop surface initializes. Please do not close or minimize this window.</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ═══════════════ MODAL: THEME ═══════════════ */}
       {openModal === 'modal-theme' && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" onMouseDown={closeModalFromBackdrop}>
           <div className="popup-window compact">
             <div className="popup-top-bar">
               <h2>App Theme</h2>
@@ -2889,7 +3395,7 @@ export default function App() {
 
       {/* ═══════════════ MODAL: ABOUT ═══════════════ */}
       {openModal === 'modal-about' && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" onMouseDown={closeModalFromBackdrop}>
           <div className="popup-window">
             <div className="popup-top-bar">
               <h2>About Graffiti Workspace</h2>
@@ -2941,80 +3447,123 @@ export default function App() {
 
       {/* ═══════════════ SETTINGS FULL OVERLAY ═══════════════ */}
       {openModal === 'settings-page' && (
-        <div id="settings-page-view">
+        <div id="settings-page-view" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setOpenModal(null);
+        }}>
           <div className="settings-page-container">
             <div className="popup-top-bar">
-              <h2>Settings</h2>
+              <div>
+                <span className="settings-eyebrow">ENGINE CONTROL</span>
+                <h2>Settings</h2>
+              </div>
               <button className="close-circle-x" onClick={() => setOpenModal(null)}>✕</button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div className="setting-row">
-                <div>
-                  <div style={{ fontWeight: 700 }}>Launch at Startup</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Start Graffiti silently when signing into Windows</div>
+            <div className="settings-sections">
+              <section className="settings-section">
+                <div className="settings-section-heading">
+                  <div>
+                    <span className="settings-section-kicker">01 / STARTUP</span>
+                    <h3>Launch behavior</h3>
+                  </div>
+                  <span className="settings-section-mark">AUTO</span>
                 </div>
-                <button className={`toggle-pill ${autostartEnabled ? 'on' : ''}`} onClick={handleToggleAutostart}>
-                  {autostartEnabled ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              <div className="setting-row">
-                <div>
-                  <div style={{ fontWeight: 700 }}>Idle Timeout (Seconds)</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pause engine if mouse hasn't moved (0 to disable)</div>
+                <div className="setting-row">
+                  <div>
+                    <div className="setting-title">Launch at Startup</div>
+                    <div className="setting-description">Start Graffiti silently when signing into Windows.</div>
+                    {autostartError && <div className="setting-description settings-inline-error">{autostartError}</div>}
+                  </div>
+                  <button
+                    className={`toggle-pill ${autostartEnabled ? 'on' : ''}`}
+                    aria-pressed={autostartEnabled}
+                    onClick={handleToggleAutostart}
+                  >
+                    <span className="toggle-dot" />{autostartEnabled ? 'ON' : 'OFF'}
+                  </button>
                 </div>
-                <input type="number" value={appSettings.idleTimeout}
-                  onChange={(e) => handleUpdateSetting('idleTimeout', parseFloat(e.target.value) || 0)}
-                  style={{ width: '80px', padding: '8px 12px', borderRadius: '12px', border: '1px solid var(--border-soft)', fontWeight: 700, textAlign: 'center' }} />
-              </div>
-              <div className="setting-row">
-                <div>
-                  <div style={{ fontWeight: 700 }}>Pause When Hidden</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pause when desktop is covered by a maximized window</div>
+                <div className="setting-row setting-row-input">
+                  <div>
+                    <div className="setting-title">Idle Timeout</div>
+                    <div className="setting-description">Pause the engine after no mouse movement. Set 0 to disable.</div>
+                  </div>
+                  <label className="settings-number-control">
+                    <input type="number" min="0" value={appSettings.idleTimeout}
+                      onChange={(e) => handleUpdateSetting('idleTimeout', parseFloat(e.target.value) || 0)} />
+                    <span>sec</span>
+                  </label>
                 </div>
-                <button className={`toggle-pill ${appSettings.pauseHidden ? 'on' : ''}`}
-                  onClick={() => handleUpdateSetting('pauseHidden', !appSettings.pauseHidden)}>
-                  {appSettings.pauseHidden ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              <div className="setting-row">
-                <div>
-                  <div style={{ fontWeight: 700 }}>Pause During Fullscreen</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pause during fullscreen games or video playback</div>
+                <div className="setting-row setting-row-input">
+                  <div>
+                    <div className="setting-title">Renderer GPU</div>
+                    <div className="setting-description">Choose the adapter used by native effects. Changing it restarts the renderer.</div>
+                  </div>
+                  <label className="settings-select-control">
+                    <select value={appSettings.preferredGPU} onChange={(e) => handleUpdateSetting('preferredGPU', e.target.value)}>
+                      <option value="Automatic">Automatic</option>
+                      {gpuAdapters.filter((adapter) => adapter !== 'Automatic').map((adapter) => (
+                        <option key={adapter} value={adapter}>{adapter}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                <button className={`toggle-pill ${appSettings.pauseFullscreen ? 'on' : ''}`}
-                  onClick={() => handleUpdateSetting('pauseFullscreen', !appSettings.pauseFullscreen)}>
-                  {appSettings.pauseFullscreen ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              <div className="setting-row">
-                <div>
-                  <div style={{ fontWeight: 700 }}>Pause on Battery</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pause when unplugged or Battery Saver is active</div>
+              </section>
+
+              <section className="settings-section">
+                <div className="settings-section-heading">
+                  <div>
+                    <span className="settings-section-kicker">02 / POWER</span>
+                    <h3>Pause rules</h3>
+                  </div>
+                  <span className="settings-section-mark">SMART</span>
                 </div>
-                <button className={`toggle-pill ${appSettings.pauseBattery ? 'on' : ''}`}
-                  onClick={() => handleUpdateSetting('pauseBattery', !appSettings.pauseBattery)}>
-                  {appSettings.pauseBattery ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              <div className="setting-row">
-                <div>
-                  <div style={{ fontWeight: 700 }}>Pause During Session Lock</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pause when Windows is locked (Win+L)</div>
+                <div className="settings-rule-grid">
+                  <div className="setting-row">
+                    <div>
+                      <div className="setting-title">When hidden</div>
+                      <div className="setting-description">Pause when a maximized window covers the desktop.</div>
+                    </div>
+                    <button className={`toggle-pill ${appSettings.pauseHidden ? 'on' : ''}`} onClick={() => handleUpdateSetting('pauseHidden', !appSettings.pauseHidden)}>
+                      <span className="toggle-dot" />{appSettings.pauseHidden ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="setting-row">
+                    <div>
+                      <div className="setting-title">Fullscreen</div>
+                      <div className="setting-description">Pause during fullscreen games or video playback.</div>
+                    </div>
+                    <button className={`toggle-pill ${appSettings.pauseFullscreen ? 'on' : ''}`} onClick={() => handleUpdateSetting('pauseFullscreen', !appSettings.pauseFullscreen)}>
+                      <span className="toggle-dot" />{appSettings.pauseFullscreen ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="setting-row">
+                    <div>
+                      <div className="setting-title">Battery saver</div>
+                      <div className="setting-description">Pause when unplugged or Battery Saver is active.</div>
+                    </div>
+                    <button className={`toggle-pill ${appSettings.pauseBattery ? 'on' : ''}`} onClick={() => handleUpdateSetting('pauseBattery', !appSettings.pauseBattery)}>
+                      <span className="toggle-dot" />{appSettings.pauseBattery ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                  <div className="setting-row">
+                    <div>
+                      <div className="setting-title">Session lock</div>
+                      <div className="setting-description">Pause when Windows is locked with Win + L.</div>
+                    </div>
+                    <button className={`toggle-pill ${appSettings.pauseSessionLocked ? 'on' : ''}`} onClick={() => handleUpdateSetting('pauseSessionLocked', !appSettings.pauseSessionLocked)}>
+                      <span className="toggle-dot" />{appSettings.pauseSessionLocked ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
                 </div>
-                <button className={`toggle-pill ${appSettings.pauseSessionLocked ? 'on' : ''}`}
-                  onClick={() => handleUpdateSetting('pauseSessionLocked', !appSettings.pauseSessionLocked)}>
-                  {appSettings.pauseSessionLocked ? 'ON' : 'OFF'}
-                </button>
-              </div>
-              <div className="setting-row" style={{ marginTop: '10px' }}>
+              </section>
+
+              <section className="settings-section settings-danger-section">
                 <div>
-                  <div style={{ fontWeight: 700, color: '#c45c5c' }}>Reset to Defaults</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Restores default settings and restarts the renderer</div>
+                  <span className="settings-section-kicker">03 / RECOVERY</span>
+                  <h3>Restore defaults</h3>
+                  <p>Restores the default rules and restarts the renderer engine.</p>
                 </div>
-                <button className="btn-outline-pill" style={{ borderColor: '#c45c5c', color: '#c45c5c' }} onClick={handleResetDefaults}>
-                  Reset
-                </button>
-              </div>
+                <button className="settings-reset-button" onClick={handleResetDefaults}>Reset settings</button>
+              </section>
             </div>
           </div>
         </div>

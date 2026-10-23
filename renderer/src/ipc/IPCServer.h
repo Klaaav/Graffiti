@@ -17,6 +17,8 @@ struct StatusSnapshot {
     float fps;
     float cpu;
     float gpuMemMB;
+    float gpuPercent;
+    float ramPercent;
     std::string state;
     std::string tier;
     std::string activePlugin;
@@ -26,7 +28,7 @@ struct StatusSnapshot {
 
 class IPCServer {
 public:
-    static void Start();
+    static void Start(const std::string& pipeName = R"(\\.\pipe\Graffiti)");
     static void Stop();
     
     // Called by the main thread to process queued commands
@@ -42,6 +44,7 @@ private:
     static void ProcessClient(HANDLE hPipe);
 
     static std::thread s_thread;
+    static std::string s_pipeName;
     static std::atomic<bool> s_running;
     
     static std::mutex s_cmdMutex;

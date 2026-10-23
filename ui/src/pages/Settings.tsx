@@ -7,6 +7,7 @@ import { loadSettings, saveSettings, AppSettings, defaultSettings, resetToDefaul
 
 export default function Settings() {
   const [autostart, setAutostart] = useState(false);
+  const [autostartError, setAutostartError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
 
@@ -17,6 +18,7 @@ export default function Settings() {
         setAutostart(auto);
       } catch (err) {
         console.warn("Autostart not supported/configured yet", err);
+        setAutostartError('Windows startup registration is unavailable.');
       }
 
       try {
@@ -33,14 +35,16 @@ export default function Settings() {
 
   const toggleAutostart = async () => {
     try {
+      setAutostartError(null);
       if (autostart) {
         await disable();
       } else {
         await enable();
       }
-      setAutostart(!autostart);
+      setAutostart(await isEnabled());
     } catch (err) {
       console.error(err);
+      setAutostartError('Could not update Windows startup registration.');
     }
   };
 
@@ -100,6 +104,7 @@ export default function Settings() {
             {autostart ? 'On' : 'Off'}
           </button>
         </SettingRow>
+        {autostartError && <p style={{ marginTop: '8px', color: 'var(--danger)', fontSize: '0.72rem' }}>{autostartError}</p>}
       </div>
 
       <div className="card">

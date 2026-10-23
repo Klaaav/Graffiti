@@ -3,10 +3,15 @@
 #pragma comment(lib, "winmm.lib")  // For timeBeginPeriod / timeEndPeriod
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <dxgi1_4.h>
 #include <iostream>
 #include <chrono>
 #include <cstdint>
 #include <algorithm>
+#include <string>
+#include <vector>
+#include <psapi.h>
+#include <pdh.h>
 #include "PluginLoader.h"
 #include "../power/PowerManager.h"
 #include "../quality/QualityManager.h"
@@ -14,6 +19,8 @@
 #include <wtsapi32.h>
 #pragma comment(lib, "Wtsapi32.lib")
 #pragma comment(lib, "PowrProf.lib")
+#pragma comment(lib, "Psapi.lib")
+#pragma comment(lib, "Pdh.lib")
 
 // Global variables for D3D
 ID3D11Device*            g_pd3dDevice           = nullptr;
@@ -29,6 +36,7 @@ HWND g_defView = nullptr;
 // Flag: true once the active plugin has loaded its wallpaper texture.
 // Prevents showing the renderer window (opaque black) before content is ready.
 static bool g_hasWallpaperLoaded = false;
+static bool g_needsRepaint = false;
 
 PluginLoader g_pluginLoader;
 RendererContext g_pluginContext = {};
@@ -69,6 +77,9 @@ struct WorkerWSearch {
 };
 
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    char className[256] = {};
+    GetClassNameA(hwnd, className, sizeof(className));
+    if (strcmp(className, "Progman") != 0 && strcmp(className, "WorkerW") != 0) return TRUE;
     // Is there a SHELLDLL_DefView child of this window?
     HWND defView = FindWindowEx(hwnd, nullptr, "SHELLDLL_DefView", nullptr);
     if (defView != nullptr) {
@@ -252,7 +263,9 @@ bool InitD3D(HWND hwnd, int width, int height) {
     sd.BufferUsage        = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     sd.BufferCount        = 2;
     sd.Scaling            = DXGI_SCALING_STRETCH;
-    sd.SwapEffect         = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    // A paused wallpaper still needs its last frame when other windows are
+    // minimized or hidden. Preserve it rather than discarding the surface.
+    sd.SwapEffect         = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
     sd.AlphaMode          = DXGI_ALPHA_MODE_UNSPECIFIED;
 
     hr = dxgiFactory->CreateSwapChainForHwnd(g_pd3dDevice, hwnd, &sd, nullptr, nullptr, &g_pSwapChain);
@@ -304,7 +317,30 @@ void ResetGPUState() {
 // ---------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------
-void Render(int fpsCap) {
+bool EnsureDesktopAttachment() {
+    if (!IsWindow(g_iconsParent) || !IsWindow(g_defView)) {
+        g_iconsParent = nullptr;
+        g_defView = nullptr;
+        WorkerWSearch search;
+        EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&search));
+    }
+    if (!g_iconsParent || !g_defView) return false;
+
+    if (GetParent(g_hwnd) != g_iconsParent) {
+        LONG style = GetWindowLongA(g_hwnd, GWL_STYLE);
+        SetWindowLongA(g_hwnd, GWL_STYLE, (style & ~WS_POPUP) | WS_CHILD);
+        SetParent(g_hwnd, g_iconsParent);
+        if (GetParent(g_hwnd) != g_iconsParent) return false;
+        g_needsRepaint = true;
+    }
+    if (GetWindow(g_hwnd, GW_HWNDPREV) != g_defView) {
+        SetWindowPos(g_hwnd, g_defView, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+    return true;
+}
+
+void Render(int fpsCap, bool advanceSimulation = true) {
     if (!g_mainRenderTargetView) return;
 
     auto now = std::chrono::high_resolution_clock::now();
@@ -336,20 +372,13 @@ void Render(int fpsCap) {
         }
         Sleep(16); // Sleep to prevent 100% CPU core usage when no effect is running
         return; // Don't render anything if no plugin is active
-    } else {
-        if (!IsWindowVisible(g_hwnd) && g_hasWallpaperLoaded) {
-            ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
-            if (g_defView) {
-                SetWindowPos(g_hwnd, g_defView, 0, 0, 0, 0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-        }
     }
+    if (!g_hasWallpaperLoaded || !EnsureDesktopAttachment()) return;
 
     // Bind the render target (required before clear / present have any effect).
     g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
 
-    if (plugin->Update) plugin->Update(deltaTime);
+    if (advanceSimulation && plugin->Update) plugin->Update(deltaTime);
     if (plugin->Render) plugin->Render();
 
     // When a software FPS cap is active, ShouldRenderFrame() already controls
@@ -359,6 +388,7 @@ void Render(int fpsCap) {
     // VSync is the sole limiter and naturally caps to monitor refresh rate).
     UINT syncInterval = (fpsCap > 0) ? 0 : 1;
     g_pSwapChain->Present(syncInterval, 0);
+    if (!IsWindowVisible(g_hwnd)) ShowWindow(g_hwnd, SW_SHOWNOACTIVATE);
 }
 
 // ---------------------------------------------------------------
@@ -368,22 +398,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_NCHITTEST:
         return HTTRANSPARENT;
+    case WM_PAINT: {
+        PAINTSTRUCT paint;
+        BeginPaint(hwnd, &paint);
+        EndPaint(hwnd, &paint);
+        g_needsRepaint = true;
+        return 0;
+    }
+    case WM_DISPLAYCHANGE:
+    case WM_SETTINGCHANGE:
+        g_needsRepaint = true;
+        break;
     case WM_TIMER:
         if (wParam == 2) {
             PowerManager::Update();
-            if (g_defView && IsWindowVisible(g_hwnd)) {
-                HWND above = GetWindow(g_hwnd, GW_HWNDPREV);
-                if (above != g_defView) {
-                    SetWindowPos(g_hwnd, g_defView, 0, 0, 0, 0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                }
-            }
+            if (g_hasWallpaperLoaded) EnsureDesktopAttachment();
         }
         return 0;
 
     case WM_SIZE:
         // Guard both device AND swap chain (resize can arrive before InitD3D completes).
-        if (g_pd3dDevice && g_pSwapChain && wParam != SIZE_MINIMIZED) {
+        if (g_pd3dDevice && g_pSwapChain && wParam != SIZE_MINIMIZED && LOWORD(lParam) > 0 && HIWORD(lParam) > 0) {
             // Unbind RTV from context before ResizeBuffers — outstanding refs cause failure
             g_pd3dDeviceContext->OMSetRenderTargets(0, nullptr, nullptr);
             CleanupRenderTarget();
@@ -455,6 +490,8 @@ void ApplyResolutionScale(float scale) {
     int processingWidth, processingHeight;
     ComputeProcessingResolution(g_pluginContext.screenWidth, g_pluginContext.screenHeight, scale, processingWidth, processingHeight);
 
+    if (processingWidth == g_pluginContext.processingWidth && processingHeight == g_pluginContext.processingHeight) return;
+
     g_pluginContext.processingWidth = processingWidth;
     g_pluginContext.processingHeight = processingHeight;
 
@@ -471,6 +508,139 @@ void ApplyResolutionScale(float scale) {
             activePlugin->OnWallpaperChanged(&layers);
         }
     }
+}
+
+static ULONGLONG FileTimeToUInt64(const FILETIME& value) {
+    ULARGE_INTEGER result;
+    result.LowPart = value.dwLowDateTime;
+    result.HighPart = value.dwHighDateTime;
+    return result.QuadPart;
+}
+
+float ReadProcessCpuPercent() {
+    FILETIME creation{}, exitTime{}, kernelTime{}, userTime{};
+    FILETIME idleTime{}, systemKernelTime{}, systemUserTime{};
+    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exitTime, &kernelTime, &userTime) ||
+        !GetSystemTimes(&idleTime, &systemKernelTime, &systemUserTime)) {
+        return 0.0f;
+    }
+
+    const ULONGLONG processTime = FileTimeToUInt64(kernelTime) + FileTimeToUInt64(userTime);
+    const ULONGLONG systemTime = FileTimeToUInt64(systemKernelTime) + FileTimeToUInt64(systemUserTime);
+    static ULONGLONG previousProcessTime = 0;
+    static ULONGLONG previousSystemTime = 0;
+    if (previousSystemTime == 0 || systemTime <= previousSystemTime || processTime < previousProcessTime) {
+        previousProcessTime = processTime;
+        previousSystemTime = systemTime;
+        return 0.0f;
+    }
+
+    const ULONGLONG processDelta = processTime - previousProcessTime;
+    const ULONGLONG systemDelta = systemTime - previousSystemTime;
+    previousProcessTime = processTime;
+    previousSystemTime = systemTime;
+    if (systemDelta == 0) return 0.0f;
+    return std::clamp(static_cast<float>(processDelta) / static_cast<float>(systemDelta) * 100.0f, 0.0f, 100.0f);
+}
+
+float ReadProcessRamPercent() {
+    MEMORYSTATUSEX memory{};
+    memory.dwLength = sizeof(memory);
+    PROCESS_MEMORY_COUNTERS_EX process{};
+    if (!GlobalMemoryStatusEx(&memory) ||
+        !GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&process), sizeof(process)) ||
+        memory.ullTotalPhys == 0) {
+        return 0.0f;
+    }
+
+    return std::clamp(
+        static_cast<float>(process.WorkingSetSize) / static_cast<float>(memory.ullTotalPhys) * 100.0f,
+        0.0f,
+        100.0f);
+}
+
+bool ReadProcessGpuEnginePercent(float& percent) {
+    static PDH_HQUERY query = nullptr;
+    static PDH_HCOUNTER counter = nullptr;
+    static bool initialized = false;
+    static bool available = true;
+
+    if (!initialized) {
+        initialized = true;
+        if (PdhOpenQueryW(nullptr, 0, &query) != ERROR_SUCCESS ||
+            PdhAddEnglishCounterW(query, L"\\GPU Engine(*)\\Utilization Percentage", 0, &counter) != ERROR_SUCCESS ||
+            PdhCollectQueryData(query) != ERROR_SUCCESS) {
+            available = false;
+        }
+        // The first collection seeds PDH's rate counter.
+        return false;
+    }
+
+    if (!available || !query || !counter || PdhCollectQueryData(query) != ERROR_SUCCESS) {
+        return false;
+    }
+
+    DWORD bufferSize = 0;
+    DWORD itemCount = 0;
+    PDH_STATUS status = PdhGetFormattedCounterArrayW(
+        counter, PDH_FMT_DOUBLE, &bufferSize, &itemCount, nullptr);
+    // Some Windows SDK versions do not expose the PDH "more data" alias even
+    // though the API still reports the required buffer size. Treat a nonzero
+    // size as the portable indication that the second query can proceed.
+    if (status == ERROR_SUCCESS || bufferSize == 0) return false;
+
+    std::vector<BYTE> buffer(bufferSize);
+    auto* items = reinterpret_cast<PDH_FMT_COUNTERVALUE_ITEM_W*>(buffer.data());
+    status = PdhGetFormattedCounterArrayW(
+        counter, PDH_FMT_DOUBLE, &bufferSize, &itemCount, items);
+    if (status != ERROR_SUCCESS) return false;
+
+    const std::wstring processPattern = L"pid_" + std::to_wstring(GetCurrentProcessId()) + L"_";
+    double total = 0.0;
+    bool found = false;
+    for (DWORD index = 0; index < itemCount; ++index) {
+        if (!items[index].szName || std::wstring(items[index].szName).find(processPattern) == std::wstring::npos) {
+            continue;
+        }
+        total += std::max(0.0, items[index].FmtValue.doubleValue);
+        found = true;
+    }
+
+    if (!found) return false;
+    percent = std::clamp(static_cast<float>(total), 0.0f, 100.0f);
+    return true;
+}
+
+void ReadGpuMemoryUsage(float& percent, float& megabytes) {
+    percent = 0.0f;
+    megabytes = 0.0f;
+    const bool hasProcessGpuUsage = ReadProcessGpuEnginePercent(percent);
+
+    IDXGIDevice* dxgiDevice = nullptr;
+    if (FAILED(g_pd3dDevice->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dxgiDevice))) || !dxgiDevice) {
+        return;
+    }
+
+    IDXGIAdapter* adapter = nullptr;
+    if (FAILED(dxgiDevice->GetAdapter(&adapter)) || !adapter) {
+        dxgiDevice->Release();
+        return;
+    }
+
+    IDXGIAdapter3* adapter3 = nullptr;
+    if (SUCCEEDED(adapter->QueryInterface(__uuidof(IDXGIAdapter3), reinterpret_cast<void**>(&adapter3))) && adapter3) {
+        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+        if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+            megabytes = static_cast<float>(info.CurrentUsage) / (1024.0f * 1024.0f);
+            if (!hasProcessGpuUsage && info.Budget > 0) {
+                percent = std::clamp(static_cast<float>(info.CurrentUsage) / static_cast<float>(info.Budget) * 100.0f, 0.0f, 100.0f);
+            }
+        }
+        adapter3->Release();
+    }
+
+    adapter->Release();
+    dxgiDevice->Release();
 }
 
 // ---------------------------------------------------------------
@@ -532,7 +702,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
     // become visible after a plugin has loaded its wallpaper texture
     // (g_hasWallpaperLoaded). Creating it visible would flash a black rectangle.
     g_hwnd = CreateWindowEx(
-        0,
+        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         wc.lpszClassName,
         "GraffitiRenderer",
         WS_POPUP,
@@ -610,6 +780,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
 
         SetParent(g_hwnd, g_iconsParent);
 
+        if (GetParent(g_hwnd) != g_iconsParent) {
+            std::cout << "[Core] Failed to attach renderer to the desktop icons host; keeping it hidden.\n";
+            ShowWindow(g_hwnd, SW_HIDE);
+        }
+
         if (g_defView) {
             SetWindowPos(g_hwnd, g_defView, 0, 0, screenWidth, screenHeight, SWP_NOACTIVATE);
         } else {
@@ -651,46 +826,39 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
 
         if (!isRunning) break;
 
-        // Evaluate render state once per loop
-        int fpsCap = QualityManager::GetFpsCap();
-        bool shouldRender = PowerManager::ShouldRenderFrame(fpsCap);
-        static bool wasRendering = true;
+        // Track input independently of frame pacing, then deliver the newest
+        // position on the next actual frame (not only on the exact mouse tick).
+        POINT pt;
+        static POINT lastPt = { -1, -1 };
+        static bool mouseDirty = false;
+        const bool hasCursor = GetCursorPos(&pt) != FALSE;
+        if (hasCursor && (pt.x != lastPt.x || pt.y != lastPt.y)) {
+            lastPt = pt;
+            mouseDirty = true;
+            PowerManager::OnMouseMove();
+        }
 
-        if (shouldRender && !wasRendering) {
+        int fpsCap = QualityManager::GetFpsCap();
+        const bool paused = PowerManager::IsPaused();
+        bool shouldRender = PowerManager::ShouldRenderFrame(fpsCap);
+        static bool wasPaused = false;
+
+        if (!paused && wasPaused) {
             // We just transitioned from Paused to Active
             if (IEffectPlugin* plugin = g_pluginLoader.GetActivePlugin()) {
                 if (plugin->OnResume) {
                     plugin->OnResume();
                 }
                 
-                // Flush stale queued input and resync previous-position state to current on resume
-                POINT pt;
-                if (GetCursorPos(&pt) && ScreenToClient(g_hwnd, &pt)) {
-                    if (plugin->OnMouseMove) {
-                        plugin->OnMouseMove(pt.x, pt.y);
-                    }
-                }
+                mouseDirty = true;
             }
         }
-        wasRendering = shouldRender;
-
-        // Global Mouse Tracking
-        POINT pt;
-        if (GetCursorPos(&pt)) {
-            static POINT lastPt = { -1, -1 };
-            if (pt.x != lastPt.x || pt.y != lastPt.y) {
-                lastPt = pt;
-                PowerManager::OnMouseMove(); // Keeps idle timers awake
-                
-                // Only pass mouse events to the active plugin if we are actively rendering
-                if (shouldRender) {
-                    if (IEffectPlugin* plugin = g_pluginLoader.GetActivePlugin()) {
-                        if (plugin->OnMouseMove) {
-                            plugin->OnMouseMove(pt.x, pt.y);
-                        }
-                    }
-                }
+        wasPaused = paused;
+        if (shouldRender && mouseDirty && hasCursor) {
+            if (IEffectPlugin* plugin = g_pluginLoader.GetActivePlugin()) {
+                if (plugin->OnMouseMove) plugin->OnMouseMove(pt.x, pt.y);
             }
+            mouseDirty = false;
         }
         
         // Process IPC Commands
@@ -711,6 +879,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                         WallpaperLayers layers = { g_lastLayerA.c_str(), g_lastLayerB.c_str() };
                         plugin->OnWallpaperChanged(&layers);
                         g_hasWallpaperLoaded = true;
+                        g_needsRepaint = true;
                     } else {
                         std::cout << "[main.cpp] -> FAILED: Active plugin missing OnWallpaperChanged.\n";
                     }
@@ -829,14 +998,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 g_pluginLoader.SetActivePlugin("");
                 g_hasWallpaperLoaded = false;
 
-                if (GetParent(g_hwnd) != nullptr) {
-                    LONG style = GetWindowLongA(g_hwnd, GWL_STYLE);
-                    style &= ~WS_CHILD;
-                    style |= WS_POPUP;
-                    SetWindowLongA(g_hwnd, GWL_STYLE, style);
-                    SetParent(g_hwnd, nullptr);
-                }
-
                 if (IsWindowVisible(g_hwnd)) {
                     ShowWindow(g_hwnd, SW_HIDE);
                 }
@@ -860,9 +1021,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
             }
         }
 
-        if (shouldRender) {
+        if (shouldRender || (g_needsRepaint && g_hasWallpaperLoaded)) {
+            g_needsRepaint = false;
             auto beforeRender = std::chrono::high_resolution_clock::now();
-            Render(fpsCap);
+            Render(fpsCap, !paused);
             auto afterRender = std::chrono::high_resolution_clock::now();
             float renderMs = std::chrono::duration<float, std::milli>(afterRender - beforeRender).count();
             
@@ -880,31 +1042,35 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
                 s_fpsWindowStart = std::chrono::steady_clock::now();
             }
             
-            // Update IPC status periodically
-            if (g_frameCount % 60 == 0) {
-                StatusSnapshot snap;
-                snap.fps = s_measuredFps;
-                snap.cpu = 0.0f;
-                snap.gpuMemMB = 0.0f;
-                
-                int stateEnum = PowerManager::GetState();
-                stateEnum = std::max(0, std::min(stateEnum, 7));
-                const char* states[] = {"VISIBLE_ACTIVE", "VISIBLE_IDLE_LOW_FPS", "IDLE_PAUSED", "HIDDEN_OCCLUDED", "HIDDEN_FULLSCREEN", "HIDDEN_BATTERY", "HIDDEN_SESSION_LOCKED", "HIDDEN_REMOTE_SESSION"};
-                snap.state = states[stateEnum];
-                snap.fpsCap = QualityManager::GetFpsCap();
-                snap.resolutionScale = QualityManager::GetResolutionScale();
-                
-                int tierEnum = QualityManager::GetCurrentTier()->level;
-                tierEnum = std::max(0, std::min(tierEnum, 2));
-                const char* tiers[] = {"LOW", "BALANCED", "HIGH"};
-                snap.tier = tiers[tierEnum];
-                
-                snap.activePlugin = g_pluginLoader.GetActivePluginName();
-                
-                IPCServer::UpdateStatus(snap);
-            }
         } else {
             Sleep(1);
+        }
+
+        // Keep lifecycle status fresh while paused or without a plugin;
+        // telemetry must not depend on the window being actively drawn.
+        static auto lastStatusUpdate = std::chrono::steady_clock::time_point{};
+        const auto statusNow = std::chrono::steady_clock::now();
+        if (statusNow - lastStatusUpdate >= std::chrono::seconds(1)) {
+            lastStatusUpdate = statusNow;
+            StatusSnapshot snap;
+            snap.fps = paused ? 0.0f : s_measuredFps;
+            snap.cpu = ReadProcessCpuPercent();
+            snap.ramPercent = ReadProcessRamPercent();
+            ReadGpuMemoryUsage(snap.gpuPercent, snap.gpuMemMB);
+
+            int stateEnum = PowerManager::GetState();
+            stateEnum = std::max(0, std::min(stateEnum, 7));
+            const char* states[] = {"VISIBLE_ACTIVE", "VISIBLE_IDLE_LOW_FPS", "IDLE_PAUSED", "HIDDEN_OCCLUDED", "HIDDEN_FULLSCREEN", "HIDDEN_BATTERY", "HIDDEN_SESSION_LOCKED", "HIDDEN_REMOTE_SESSION"};
+            snap.state = states[stateEnum];
+            snap.fpsCap = QualityManager::GetFpsCap();
+            snap.resolutionScale = QualityManager::GetResolutionScale();
+
+            int tierEnum = QualityManager::GetCurrentTier()->level;
+            tierEnum = std::max(0, std::min(tierEnum, 2));
+            const char* tiers[] = {"LOW", "BALANCED", "HIGH"};
+            snap.tier = tiers[tierEnum];
+            snap.activePlugin = g_pluginLoader.GetActivePluginName();
+            IPCServer::UpdateStatus(snap);
         }
     }
 

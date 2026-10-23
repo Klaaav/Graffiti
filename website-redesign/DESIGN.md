@@ -164,7 +164,7 @@ The signal rail uses a concise brand lockup, sparse section links, and one actio
 
 ### Download release dialog
 - The Download module opens a large square-cornered version browser in the same void/gold/coral system.
-- Version 1.0 is the current Windows NSIS installer; Version 1.1 is a planned list covering new effects, curved Gallery shapes, and possible native 3D rendering alongside Web Wallpaper.
+- The download field exposes the current Windows NSIS installer directly, with the version browser retained for planned releases. Version 1.1 is a planned list covering new effects, curved Gallery shapes, possible native 3D rendering alongside Web Wallpaper, and live wallpapers.
 
 ## Do's and Don'ts
 

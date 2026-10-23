@@ -8,17 +8,19 @@
 using json = nlohmann::json;
 
 std::thread IPCServer::s_thread;
+std::string IPCServer::s_pipeName;
 std::atomic<bool> IPCServer::s_running{false};
 std::mutex IPCServer::s_cmdMutex;
 std::vector<IPCMessage> IPCServer::s_cmdQueue;
 std::mutex IPCServer::s_statusMutex;
-StatusSnapshot IPCServer::s_status = {0, 0, 0, "UNKNOWN", "UNKNOWN", "none"};
+StatusSnapshot IPCServer::s_status = {0, 0, 0, 0, 0, "UNKNOWN", "UNKNOWN", "none", 60, 1.0f};
 static std::chrono::steady_clock::time_point s_lastMessageTime =
     std::chrono::steady_clock::now();
 
-void IPCServer::Start() {
+void IPCServer::Start(const std::string& pipeName) {
   if (s_running)
     return;
+  s_pipeName = pipeName;
   s_running = true;
   s_thread = std::thread(ServerThreadFunc);
   std::cout << "[IPC] Server started.\n";
@@ -31,7 +33,7 @@ void IPCServer::Stop() {
 
   // Connect to the pipe locally to unblock ConnectNamedPipe
   HANDLE hPipe =
-      CreateFileA("\\\\.\\pipe\\Graffiti", GENERIC_READ | GENERIC_WRITE, 0,
+      CreateFileA(s_pipeName.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
                   nullptr, OPEN_EXISTING, 0, nullptr);
   if (hPipe != INVALID_HANDLE_VALUE) {
     CloseHandle(hPipe);
@@ -69,7 +71,7 @@ float IPCServer::GetTimeSinceLastMessage() {
 void IPCServer::ServerThreadFunc() {
   while (s_running) {
     HANDLE hPipe =
-        CreateNamedPipeA("\\\\.\\pipe\\Graffiti", PIPE_ACCESS_DUPLEX,
+        CreateNamedPipeA(s_pipeName.c_str(), PIPE_ACCESS_DUPLEX,
                          PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
                          PIPE_UNLIMITED_INSTANCES, 4096, 4096, 0, nullptr);
 
@@ -131,6 +133,8 @@ void IPCServer::ProcessClient(HANDLE hPipe) {
           resp["fps"] = snap.fps;
           resp["cpu"] = snap.cpu;
           resp["gpuMemMB"] = snap.gpuMemMB;
+          resp["gpuPercent"] = snap.gpuPercent;
+          resp["ramPercent"] = snap.ramPercent;
           resp["state"] = snap.state;
           resp["tier"] = snap.tier;
           resp["activePlugin"] = snap.activePlugin;
@@ -182,10 +186,6 @@ void IPCServer::ProcessClient(HANDLE hPipe) {
             // thread's window parenting and causes the "black screen" bug.
             // The main thread handles wallpaper registry updates quietly
             // via SPIF_UPDATEINIFILE (no broadcast) after loading the texture.
-            std::string respStr = "{\"status\":\"ok\"}\n";
-            DWORD bytesWritten = 0;
-            WriteFile(hPipe, respStr.c_str(), respStr.size(), &bytesWritten,
-                      nullptr);
           } else if (cmd == "clear_wallpaper") {
             // Queued to the main thread — calling SystemParametersInfo here
             // would race with Explorer's WorkerW rebuild (same bug as the
@@ -214,12 +214,25 @@ void IPCServer::ProcessClient(HANDLE hPipe) {
           }
 
           if (!msg.cmd.empty()) {
-            std::lock_guard<std::mutex> lock(s_cmdMutex);
-            s_cmdQueue.push_back(msg);
+            {
+              std::lock_guard<std::mutex> lock(s_cmdMutex);
+              s_cmdQueue.push_back(msg);
+            }
+            // Every mutating request must remain connected until it has been
+            // queued. Otherwise a fast client can write and close before
+            // ConnectNamedPipe completes, losing a setting/effect change.
+            const std::string response = "{\"status\":\"queued\"}\n";
+            DWORD bytesWritten = 0;
+            WriteFile(hPipe, response.c_str(), static_cast<DWORD>(response.size()),
+                      &bytesWritten, nullptr);
           }
         }
       } catch (const std::exception &e) {
         std::cerr << "[IPC] JSON parsing error: " << e.what() << "\n";
+        const std::string response = json({{"error", "Invalid renderer command"}}).dump() + "\n";
+        DWORD bytesWritten = 0;
+        WriteFile(hPipe, response.c_str(), static_cast<DWORD>(response.size()),
+                  &bytesWritten, nullptr);
       }
     }
   }

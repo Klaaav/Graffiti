@@ -1,7 +1,17 @@
+---
+const installerUrl = 'https://github.com/Klaaav/Graffiti/raw/refs/heads/master/downloads/Graffiti_1.0.0_x64-setup.exe';
+const installerFilename = 'Graffiti_1.0.0_x64-setup.exe';
+---
+
 <div class="download-release">
-  <button class="button button-primary download-trigger" type="button" aria-haspopup="dialog" aria-controls="release-dialog">
-    Browse versions <b aria-hidden="true">↗</b>
-  </button>
+  <div class="download-actions" aria-label="Download options">
+    <a class="button button-primary download-latest" href={installerUrl} download={installerFilename}>
+      Download latest version <b aria-hidden="true">↓</b>
+    </a>
+    <button class="button button-ghost download-trigger" type="button" aria-haspopup="dialog" aria-controls="release-dialog">
+      Browse versions <b aria-hidden="true">↗</b>
+    </button>
+  </div>
 
   <dialog class="release-dialog" id="release-dialog" aria-labelledby="release-dialog-title">
     <div class="release-dialog-frame">
@@ -21,7 +31,7 @@
           <h3>Graffiti 1.0.0</h3>
           <p>Windows NSIS installer for the current desktop wallpaper experience.</p>
           <div class="release-meta"><span>NSIS / WINDOWS</span><span>95.44 MIB</span></div>
-          <a class="button button-primary" href="https://github.com/Klaaav/Graffiti/raw/refs/heads/master/downloads/Graffiti_1.0.0_x64-setup.exe" download="Graffiti_1.0.0_x64-setup.exe">Download Version 1.0 <b aria-hidden="true">↗</b></a>
+          <a class="button button-primary" href={installerUrl} download={installerFilename}>Download Version 1.0 <b aria-hidden="true">↗</b></a>
         </article>
 
         <article class="release-card release-card-planned">
@@ -32,6 +42,7 @@
             <li>New cursor-reactive effects</li>
             <li>Curved shapes in Gallery alongside straight-sided shapes</li>
             <li>Optional native 3D rendering alongside Web Wallpaper</li>
+            <li>Live wallpapers</li>
           </ul>
         </article>
       </div>

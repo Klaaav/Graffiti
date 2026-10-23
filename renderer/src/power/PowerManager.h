@@ -19,6 +19,7 @@ public:
     static void OnMouseMove();
     static void Update(); // Called periodically to check occlusion/idle
     static PowerState GetState();
+    static bool IsPaused();
     static bool ShouldRenderFrame(int currentFpsCap);
 
     // Configuration setters
