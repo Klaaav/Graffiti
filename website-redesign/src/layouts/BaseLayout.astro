@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import CustomCursor from '../components/CustomCursor.astro';
+import AnalyticsTracker from '../components/AnalyticsTracker.astro';
 const { title = 'Graffiti — Make your wallpaper move', description = 'Graffiti turns your own images into interactive Windows desktop wallpapers.' } = Astro.props;
 ---
 <!doctype html>
@@ -13,5 +14,5 @@ const { title = 'Graffiti — Make your wallpaper move', description = 'Graffiti
     <title>{title}</title>
     <link rel="icon" href="/logos/logo_transparent.png" />
   </head>
-  <body><slot /><CustomCursor /></body>
+  <body><slot /><AnalyticsTracker /><CustomCursor /></body>
 </html>

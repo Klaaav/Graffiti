@@ -8,6 +8,10 @@
   "scripts": {
     "dev": "astro dev --host 127.0.0.1",
     "build": "astro build",
+    "build:worker": "astro build",
+    "dev:worker": "npm run build:worker && wrangler dev",
+    "deploy": "npm run build:worker && wrangler deploy",
+    "check:worker": "npm run build:worker && wrangler deploy --dry-run",
     "preview": "astro preview",
     "check:ui": "node scripts/check-ui.mjs",
     "astro": "astro"
@@ -19,6 +23,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "playwright-core": "^1.64.0"
+    "playwright-core": "^1.64.0",
+    "wrangler": "^4.152.0"
   }
 }

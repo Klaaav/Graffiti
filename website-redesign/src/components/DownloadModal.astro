@@ -5,7 +5,7 @@ const installerFilename = 'Graffiti_1.0.0_x64-setup.exe';
 
 <div class="download-release">
   <div class="download-actions" aria-label="Download options">
-    <a class="button button-primary download-latest" href={installerUrl} download={installerFilename}>
+    <a class="button button-primary download-latest" href={installerUrl} download={installerFilename} data-analytics-event="download_click">
       Download latest version <b aria-hidden="true">↓</b>
     </a>
     <button class="button button-ghost download-trigger" type="button" aria-haspopup="dialog" aria-controls="release-dialog">
@@ -31,7 +31,7 @@ const installerFilename = 'Graffiti_1.0.0_x64-setup.exe';
           <h3>Graffiti 1.0.0</h3>
           <p>Windows NSIS installer for the current desktop wallpaper experience.</p>
           <div class="release-meta"><span>NSIS / WINDOWS</span><span>95.44 MIB</span></div>
-          <a class="button button-primary" href={installerUrl} download={installerFilename}>Download Version 1.0 <b aria-hidden="true">↗</b></a>
+          <a class="button button-primary" href={installerUrl} download={installerFilename} data-analytics-event="download_click">Download Version 1.0 <b aria-hidden="true">↗</b></a>
         </article>
 
         <article class="release-card release-card-planned">

@@ -13,6 +13,7 @@ export default function EffectsStage() {
   const [active, setActive] = useState(0);
   const [ready, setReady] = useState(false);
   const stage = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
@@ -21,6 +22,18 @@ export default function EffectsStage() {
     if (stage.current) observer.observe(stage.current);
     return () => observer.disconnect();
   }, []);
+
+  /* Ensure the video plays after each source change – browsers may silently
+     reject the autoplay attribute when the element is re-keyed. */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !ready) return;
+    video.play().catch(() => {
+      /* Autoplay blocked – attempt again after a user gesture or just show first frame */
+      video.muted = true;
+      video.play().catch(() => {});
+    });
+  }, [active, ready]);
 
   const [name, description, file] = effects[active];
 
@@ -37,7 +50,7 @@ export default function EffectsStage() {
         <div className="effect-stage-shell">
           <div className="stage-header"><span>OUTPUT / {String(active + 1).padStart(2, '0')}</span><span>ACTIVE EFFECT / {name}</span></div>
           <div className="effect-stage">
-            {ready && <video key={file} src={`/effects/${encodeURIComponent(file)}`} muted loop playsInline autoPlay preload="metadata" aria-label={`${name} effect demonstration`} />}
+            {ready && <video ref={videoRef} key={file} src={`/effects/${encodeURIComponent(file)}`} muted loop playsInline autoPlay preload="auto" aria-label={`${name} effect demonstration`} />}
             {!ready && <div className="stage-placeholder">Scroll to initialize signal</div>}
             <div className="stage-crosshair" aria-hidden="true"><i></i><i></i></div>
             <div className="stage-label"><span>{name}</span><small>real screen recording</small></div>

@@ -143,8 +143,8 @@ All primary controls, panels, and sections use square corners (`0px`). Borders a
 - No perpetual render loop. Touch and reduced-motion visitors get the static poster and the same working link to Effects.
 
 ### Feedback
-- **Categories:** Thought, Bug, Question, and Effect idea are explicit buttons rather than a native select menu.
-- **View:** a local-only “View feedback” control expands saved browser notes; no remote submission or public feed is implied.
+- **Type + rating:** Thought, Bug, Question, and Idea are explicit buttons, followed by a single authored five-star rail with native radio semantics, keyboard support, and a visible score readout.
+- **View + votes:** the public feedback list stays below the form, using the existing ruled list treatment, a restrained Load more action, and compact thumbs up/down controls.
 
 ### Cursor
 - A cropped, transparent arrow from the supplied Taming IO cursor reference follows a fine pointer and gains a restrained coral hard-shadow over controls. It is disabled for touch and reduced-motion contexts.
@@ -153,14 +153,14 @@ All primary controls, panels, and sections use square corners (`0px`). Borders a
 ### Inputs / Fields
 - **Style:** transparent fields with 2px bottom rules, monospace labels, and no rounded shells.
 - **Focus:** gold rule and visible gold outline.
-- **Status:** local feedback explicitly says it was saved in this browser and makes no remote-success claim.
+- **Status:** feedback explains that entries appear publicly and only the category, rating, message, and optional name are stored.
 
 ### Navigation
 
 The signal rail uses a concise brand lockup, sparse section links, and one action. Links collapse at 920px while the action remains available.
 
 ### Feedback field
-- Feedback remains a local-only form, with three small geometric tiles behind the content using logo-gold/coral hard offsets to echo the model viewport's depth.
+- Feedback keeps the three small geometric tiles behind the content using logo-gold/coral hard offsets to echo the model viewport's depth. The data layer is remote, but the presentation remains a simple ruled form, public list, and compact vote row.
 
 ### Download release dialog
 - The Download module opens a large square-cornered version browser in the same void/gold/coral system.

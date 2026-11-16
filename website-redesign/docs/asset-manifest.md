@@ -33,4 +33,4 @@ The hero uses no supplied wallpaper image. Its alternate signal poster is author
 
 - `downloads/Graffiti_1.0.0_x64-setup.exe` is the tracked Version 1.0 NSIS installer, copied from the Tauri release bundle. Its measured size is 100,073,110 bytes (95.44 MiB / 100.07 MB).
 - The website's Version 1.0 download link points to `https://github.com/Klaaav/Graffiti/raw/refs/heads/master/downloads/Graffiti_1.0.0_x64-setup.exe`.
-- Feedback remains intentionally local-only and never displays a remote success state.
+- Feedback is backed by the same-origin Worker/D1 API; the public list renders safely below the existing form with category, rating, and thumbs voting, while the standalone Tauri admin app handles review state and classification.

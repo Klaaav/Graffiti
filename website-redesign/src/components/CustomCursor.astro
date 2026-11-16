@@ -17,9 +17,20 @@
       y = event.clientY;
       if (!frame) frame = requestAnimationFrame(render);
     }, { passive: true });
-    document.querySelectorAll<HTMLElement>('a, button, select, textarea, [role="button"]').forEach((element) => {
-      element.addEventListener('pointerenter', () => cursor.classList.add('is-over-control'));
-      element.addEventListener('pointerleave', () => cursor.classList.remove('is-over-control'));
+    /* Use event delegation on the body so dynamically-rendered React controls
+       (effect queue buttons, feedback form elements, etc.) get the cursor highlight
+       without needing per-element listeners. */
+    document.body.addEventListener('pointerover', (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest('a, button, select, textarea, input, [role="button"], [role="tab"]')
+        : null;
+      if (target) cursor.classList.add('is-over-control');
+    });
+    document.body.addEventListener('pointerout', (event) => {
+      const target = event.target instanceof Element
+        ? event.target.closest('a, button, select, textarea, input, [role="button"], [role="tab"]')
+        : null;
+      if (target) cursor.classList.remove('is-over-control');
     });
   }
 </script>

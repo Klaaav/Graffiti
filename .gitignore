@@ -46,12 +46,21 @@ renderer/build/
 # Build logs and temp files
 build_log.txt
 temp_font.ttf
+__pycache__/
+.clangd
+.clangd/
+catch_error.py
+mock_config.py
+test.cs
+test.rs
 
 # Font archives (assets stored elsewhere)
 BodoniModa.zip
 BodoniModa-Variable.ttf
 !ui/public/fonts/
 !ui/public/fonts/BodoniModa-Variable.ttf
+!admin-console/public/fonts/
+!admin-console/public/fonts/BodoniModa-Variable.ttf
 
 # Screenshots / session captures
 App_UI_SS/
@@ -68,6 +77,9 @@ website/.astro/
 website-redesign/node_modules/
 website-redesign/dist/
 website-redesign/.astro/
+admin-console/node_modules/
+admin-console/dist/
+admin-console/src-tauri/target/
 
 # Public website download artifact
 !downloads/

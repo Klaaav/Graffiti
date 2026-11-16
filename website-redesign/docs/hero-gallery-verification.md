@@ -7,7 +7,7 @@
 - Gallery description: “Draw custom shapes and fill them with images or solid colors to create a wallpaper that’s entirely your own.”
 - Web Wallpaper note: “Web Wallpaper renders 3D models in an embedded WebView, which can use more RAM and GPU resources than native image effects.”
 - Gallery copy and media have separate grid areas on desktop and stack on smaller screens.
-- Download uses the logo-gold field; Gallery's collage label is covered with a solid `GALLERY` stamp; feedback categories are buttons and saved browser feedback can be expanded with `View feedback`. The attribution reads `A product of Klaav`, and the button/effect-row scanlines use smooth easing rather than stepped motion.
+- Download uses the logo-gold field; Gallery's collage label is covered with a solid `GALLERY` stamp; feedback categories are buttons and the public list exposes vote controls. The attribution reads `A product of Klaav`, and the button/effect-row scanlines use smooth easing rather than stepped motion.
 - The header local-account status was removed; the Effects stage now reports `ACTIVE EFFECT / [selection]`; Feedback includes three small gold/coral hard-offset tiles behind the form.
 - Effects copy now says `Take your wallpaper to a whole new level with six cursor-reactive effects.` Web Wallpaper keeps only `Import a GLB model and let it live behind the desktop.` Download now describes the app as `A lightweight Windows app for turning the wallpaper you already own into a responsive desktop scene.`
 - Hero copy now names the complete product surface: cursor-reactive effects, the shape-based Gallery, and 3D wallpapers running locally on Windows.
@@ -46,4 +46,4 @@ Screenshots and structured results are in `docs/verification/`. Fresh compact-la
 
 The last available Impeccable detector run against `src/` found 0 anti-patterns and advisory findings for intentional display/micro type sizes, warm registration colors, and the measurement-grid overlay. It was not rerun after this hero revision because the Windows launcher is unavailable in the Linux worker shell; no new detector score is claimed here.
 
-These checks cover the requested hero and wording changes. They do not claim performance benchmarks, remote feedback submission, installer verification, or a new 3D rotation regression test.
+These checks cover the requested hero and wording changes. They do not claim performance benchmarks, remote feedback submission, installer verification, analytics totals, or a new 3D rotation regression test.

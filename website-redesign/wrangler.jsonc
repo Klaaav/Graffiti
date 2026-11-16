@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "app",
+  "account_id": "6d99e61134044130336903801da3f746",
+  "main": "./src/worker/index.js",
+  "compatibility_date": "2026-10-23",
+  "upload_source_maps": true,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "graffiti-feedback",
+      "database_id": "28ecaf14-ad01-4278-9fa8-23087bc8c01f",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

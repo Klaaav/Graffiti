@@ -21,17 +21,17 @@ export default function GallerySection() {
   useEffect(() => {
     let frame = 0;
     const update = () => {
+      frame = 0;
       if (!section.current) return;
       const rect = section.current.getBoundingClientRect();
       const scrollable = Math.max(1, rect.height - window.innerHeight);
       setProgress(Math.max(0, Math.min(1, -rect.top / scrollable)));
-      frame = 0;
     };
     const onScroll = () => { if (!frame) frame = requestAnimationFrame(update); };
-    addEventListener('scroll', onScroll, { passive: true });
-    addEventListener('resize', onScroll);
-    update();
-    return () => { removeEventListener('scroll', onScroll); removeEventListener('resize', onScroll); if (frame) cancelAnimationFrame(frame); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+    onScroll();
+    return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); if (frame) cancelAnimationFrame(frame); };
   }, []);
 
   const arrange = Math.min(1, Math.max(0, (progress - 0.14) / 0.52));

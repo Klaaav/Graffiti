@@ -1,0 +1,49 @@
+<script>
+  (() => {
+    const visitorKey = 'graffiti_visitor_id';
+    const pageViewKey = 'graffiti_page_view_sent';
+    const allowedEvents = new Set(['page_view', 'download_click']);
+
+    function getVisitorId() {
+      try {
+        const existing = window.localStorage.getItem(visitorKey);
+        if (existing && /^[A-Za-z0-9_-]{16,128}$/.test(existing)) return existing;
+        const generated = typeof crypto?.randomUUID === 'function'
+          ? crypto.randomUUID().replaceAll('-', '')
+          : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+        window.localStorage.setItem(visitorKey, generated);
+        return generated;
+      } catch {
+        return '';
+      }
+    }
+
+    const visitorId = getVisitorId();
+    const track = (event) => {
+      if (!visitorId || !allowedEvents.has(event)) return;
+      void fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ event, visitorId }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    window.graffitiTrack = track;
+
+    try {
+      if (!window.sessionStorage.getItem(pageViewKey)) {
+        window.sessionStorage.setItem(pageViewKey, '1');
+        track('page_view');
+      }
+    } catch {
+      track('page_view');
+    }
+
+    document.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target.closest('[data-analytics-event]') : null;
+      const eventName = target?.getAttribute('data-analytics-event');
+      if (eventName) track(eventName);
+    });
+  })();
+</script>

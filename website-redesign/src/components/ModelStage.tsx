@@ -10,6 +10,16 @@ export default function ModelStage() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    const node = viewer.current;
+    if (!node || !visible) return;
+    const onLoad = () => setLoaded(true);
+    node.addEventListener('load', onLoad);
+    /* If already loaded before we attached the listener */
+    if ((node as any).loaded) setLoaded(true);
+    return () => node.removeEventListener('load', onLoad);
+  }, [visible]);
+
+  useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
       setVisible(entry.isIntersecting);
       if (entry.isIntersecting && !customElements.get('model-viewer')) {
@@ -70,7 +80,7 @@ export default function ModelStage() {
         <small>Web Wallpaper renders 3D models in an embedded WebView, which can use more RAM and GPU resources than native image effects.</small>
       </div>
       <div className="model-viewport">
-        {visible && <model-viewer ref={viewer} src="/models/model.glb" alt="Interactive 3D wallpaper model" camera-controls={false} interaction-prompt="none" camera-orbit="0deg 72deg 3.8m" min-camera-orbit="auto auto 3.8m" max-camera-orbit="auto auto 3.8m" min-field-of-view="30deg" max-field-of-view="30deg" exposure="1.1" shadow-intensity="0.7" loading="lazy" onLoad={() => setLoaded(true)} />}
+        {visible && <model-viewer ref={viewer} src="/models/model.glb" alt="Interactive 3D wallpaper model" camera-controls={false} interaction-prompt="none" camera-orbit="0deg 72deg 3.8m" min-camera-orbit="auto auto 3.8m" max-camera-orbit="auto auto 3.8m" min-field-of-view="30deg" max-field-of-view="30deg" exposure="1.1" shadow-intensity="0.7" loading="lazy" />}
         {!loaded && <span className="model-loading" aria-live="polite">Loading scene…</span>}
         <div className="model-lock">WEBVIEW<br /><strong>3D</strong></div>
         <div className="model-hint">Move your pointer to look around</div>

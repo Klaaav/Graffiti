@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 // A separate headless browser for the local build; no user browser profile or CDP connection.
-const baseURL = new URL(process.env.UI_TEST_URL ?? 'http://127.0.0.1:4335/');
+const baseURL = new URL(process.env.UI_TEST_URL ?? 'http://127.0.0.1:8787/');
 assert.ok(['127.0.0.1', 'localhost'].includes(baseURL.hostname), 'This smoke check is local-only.');
 const output = new URL('../docs/verification/', import.meta.url);
 const capturePath = (name) => fileURLToPath(new URL(name, output));
@@ -190,16 +190,21 @@ try {
     await page.locator('#download').screenshot({ path: capturePath(`${scenario.name}-download.png`) });
     await page.locator('#feedback').scrollIntoViewIfNeeded();
     await page.waitForTimeout(750);
-    await page.getByRole('button', { name: /View feedback/ }).click();
+    await page.locator('.feedback-form').waitFor();
     await page.locator('.feedback-list').waitFor();
-    assert.equal(await page.getByText(/No saved notes yet|Saved in this browser/).count() > 0, true, 'Feedback viewer opens.');
+    await page.waitForFunction(() => document.querySelector('.feedback-list')?.getAttribute('aria-busy') === 'false');
+    assert.equal(await page.locator('input[name="rating"]').count(), 5, 'Feedback uses five accessible rating radios.');
+    assert.equal(await page.getByText('Feedback appears publicly on this page. Only the category, rating, message, and optional name are stored.', { exact: true }).count(), 1, 'Feedback storage disclosure is visible.');
+    assert.equal(await page.locator('.feedback-type-options button').count(), 4, 'Feedback categories use four buttons.');
+    assert.equal(await page.locator('.feedback-votes button').count() <= 2 * 20, true, 'Public feedback entries expose compact vote controls.');
+    assert.equal(await page.locator('.feedback-status[aria-live="polite"]').count(), 1, 'Feedback status messages use aria-live.');
+    assert.equal(await page.getByRole('button', { name: 'Load more' }).count() <= 1, true, 'Feedback pagination has at most one Load more control.');
     await page.locator('#feedback').screenshot({ path: capturePath(`${scenario.name}-feedback.png`) });
     const layout = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));
     assert.ok(layout.scrollWidth <= layout.width + 1, `Horizontal overflow: ${JSON.stringify(layout)}`);
     assert.deepEqual(failedAssets, [], 'Local production assets resolve.');
     assert.deepEqual(errors, [], 'No page JavaScript errors.');
-    assert.equal(await page.locator('.feedback-type-options [role="radio"]').count(), 4, 'Feedback categories use buttons.');
-    assert.equal(await page.getByRole('button', { name: /View feedback|Hide feedback/ }).count(), 1, 'Feedback list toggle is available.');
+    assert.equal(await page.locator('input[name="rating"]').count(), 5, 'Feedback uses five rating choices.');
     assert.equal(await page.locator('.site-cursor').count(), 1, 'Custom cursor is present.');
     const cursorImage = await page.locator('.site-cursor').evaluate(image => ({ src: image.getAttribute('src'), loaded: image.complete && image.naturalWidth > 0, width: parseFloat(getComputedStyle(image).width) }));
     assert.ok(cursorImage.loaded && cursorImage.src?.includes('/cursor/taming-arrow-cursor.png'), 'The supplied arrow cursor asset is loaded.');
