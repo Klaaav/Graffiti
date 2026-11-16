@@ -251,7 +251,6 @@ export default function FeedbackForm() {
   const [category, setCategory] = useState<FeedbackCategory>('Thought');
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
-  const [name, setName] = useState('');
   const [message, setMessage] = useState('');
   const [honeypot, setHoneypot] = useState('');
   const [submissionState, setSubmissionState] = useState<SubmissionState>('idle');
@@ -266,7 +265,11 @@ export default function FeedbackForm() {
   const [modalOffset, setModalOffset] = useState<number>(0);
   const [modalHasMore, setModalHasMore] = useState<boolean>(false);
   const [modalLoading, setModalLoading] = useState<boolean>(false);
-  const [summary, setSummary] = useState<RatingsSummary>(() => computeSummary(DEFAULT_COMMUNITY_REVIEWS));
+  const [summary, setSummary] = useState<RatingsSummary>({
+    total: 0,
+    average: 5.0,
+    distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+  });
 
   useEffect(() => {
     setMounted(true);
@@ -442,9 +445,8 @@ export default function FeedbackForm() {
     setVisitorId(id);
     const handle = getDeviceHandle();
     setDeviceHandle(handle);
-    setName(handle);
 
-    // Initial summary fetch
+    // Initial summary fetch from remote database
     fetch(`/api/feedback?limit=1`, {
       headers: { Accept: 'application/json', ...(id ? { 'X-Visitor-Id': id } : {}) },
     })
@@ -455,8 +457,7 @@ export default function FeedbackForm() {
         }
       })
       .catch(() => {
-        // In local mode keep default summary
-        setSummary(computeSummary(DEFAULT_COMMUNITY_REVIEWS));
+        // Leave summary at zero in case of network issue
       });
   }, []);
 
@@ -475,15 +476,12 @@ export default function FeedbackForm() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmedMessage = message.trim();
-    const chosenName = name.trim() || deviceHandle || 'Anonymous';
-    if (!rating || !trimmedMessage || trimmedMessage.length > 1000 || chosenName.length > 60) {
+    const chosenName = deviceHandle || 'Anonymous';
+    if (!rating || !trimmedMessage || trimmedMessage.length > 1000) {
       setSubmissionState('error');
       setStatusMessage('Choose a rating and keep your message within 1000 characters.');
       return;
     }
-
-    saveDeviceHandle(chosenName);
-    setDeviceHandle(chosenName);
 
     setSubmissionState('submitting');
     setStatusMessage('Sending feedback…');
@@ -492,7 +490,7 @@ export default function FeedbackForm() {
       try {
         turnstileToken = await getTurnstileToken();
       } catch {
-        // Ignore turnstile locally if not configured
+        // Ignore turnstile locally or if not configured
       }
 
       const response = await fetch('/api/feedback', {
@@ -509,28 +507,24 @@ export default function FeedbackForm() {
       }
 
       if (!response.ok || !payload.entry) {
-        // Fallback for local testing: add to local sample reviews
-        const localEntry: FeedbackEntry = {
-          id: Date.now(),
-          created_at: new Date().toISOString(),
-          rating,
-          category,
-          name: chosenName,
-          message: trimmedMessage,
-          upvotes: 0,
-          downvotes: 0,
-          viewerVote: 0,
-        };
-        DEFAULT_COMMUNITY_REVIEWS.unshift(localEntry);
-        setModalEntries((prev) => [localEntry, ...prev]);
-        setSummary(computeSummary(DEFAULT_COMMUNITY_REVIEWS));
+        setSubmissionState('error');
+        setStatusMessage(typeof payload.error === 'string' ? payload.error : 'Unable to submit feedback. Please try again.');
+        return;
+      }
+
+      const entry = payload.entry as FeedbackEntry;
+      setModalEntries((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)]);
+      if (payload.summary) {
+        setSummary(payload.summary as RatingsSummary);
       } else {
-        const entry = payload.entry as FeedbackEntry;
-        DEFAULT_COMMUNITY_REVIEWS.unshift(entry);
-        setModalEntries((prev) => [entry, ...prev.filter((item) => item.id !== entry.id)]);
-        if (payload.summary) {
-          setSummary(payload.summary as RatingsSummary);
-        }
+        setSummary((prev) => ({
+          ...prev,
+          total: prev.total + 1,
+          distribution: {
+            ...prev.distribution,
+            [rating as 1 | 2 | 3 | 4 | 5]: (prev.distribution[rating as 1 | 2 | 3 | 4 | 5] || 0) + 1,
+          },
+        }));
       }
 
       setRating(0);
@@ -539,26 +533,8 @@ export default function FeedbackForm() {
       setSubmissionState('success');
       setStatusMessage('Thank you! Your note is recorded.');
     } catch {
-      // Local fallback
-      const localEntry: FeedbackEntry = {
-        id: Date.now(),
-        created_at: new Date().toISOString(),
-        rating,
-        category,
-        name: chosenName,
-        message: trimmedMessage,
-        upvotes: 0,
-        downvotes: 0,
-        viewerVote: 0,
-      };
-      DEFAULT_COMMUNITY_REVIEWS.unshift(localEntry);
-      setModalEntries((prev) => [localEntry, ...prev]);
-      setSummary(computeSummary(DEFAULT_COMMUNITY_REVIEWS));
-      setRating(0);
-      setMessage('');
-      setHoneypot('');
-      setSubmissionState('success');
-      setStatusMessage('Thank you! Your note is recorded.');
+      setSubmissionState('error');
+      setStatusMessage('Network connection error. Please try again.');
     } finally {
       resetTurnstile();
     }
@@ -650,48 +626,15 @@ export default function FeedbackForm() {
 
         <div className="feedback-handle-group">
           <div className="feedback-handle-header">
-            <label htmlFor="feedback-name">Your device handle</label>
-            <span className="feedback-handle-badge">Local identity</span>
+            <span className="feedback-handle-title">Your device handle</span>
+            <span className="feedback-handle-badge">Permanent device identity</span>
           </div>
-          <div className="feedback-handle-row">
-            <input
-              id="feedback-name"
-              className="feedback-input feedback-handle-input"
-              type="text"
-              value={name}
-              maxLength={60}
-              autoComplete="name"
-              onChange={(event) => {
-                setName(event.target.value);
-                setSubmissionState('idle');
-                setStatusMessage('');
-              }}
-              onBlur={(event) => {
-                const val = event.target.value.trim();
-                if (val) {
-                  saveDeviceHandle(val);
-                  setDeviceHandle(val);
-                }
-              }}
-              placeholder="Your device handle"
-            />
-            <button
-              type="button"
-              className="feedback-handle-dice"
-              title="Generate a new device handle"
-              aria-label="Generate a new device handle"
-              onClick={() => {
-                const next = generateDeviceHandle();
-                setName(next);
-                setDeviceHandle(next);
-                saveDeviceHandle(next);
-              }}
-            >
-              <span>🎲 New handle</span>
-            </button>
+          <div className="feedback-handle-display" aria-label={`Device handle: ${deviceHandle}`}>
+            <span className="feedback-handle-symbol">@</span>
+            <span className="feedback-handle-val">{deviceHandle}</span>
           </div>
           <small className="feedback-handle-hint">
-            Assigned to this device. No account or email needed. You can edit this handle anytime.
+            Permanently bound to this device. No account or email needed.
           </small>
         </div>
 
@@ -721,7 +664,7 @@ export default function FeedbackForm() {
               {submissionState === 'submitting' ? 'Sending…' : 'Send feedback'} <b aria-hidden="true">↗</b>
             </button>
           </div>
-          <span>Feedback appears publicly in community reviews. Only the category, rating, message, and device handle are stored.</span>
+          <span>Every user review is deeply valuable to our developer team. We actively review submissions and work to implement community-proposed ideas and improvements.</span>
         </div>
         {statusMessage && (
           <p className={`feedback-status feedback-status-${submissionState}`} role={submissionState === 'error' || submissionState === 'rate-limited' ? 'alert' : undefined} aria-live="polite">

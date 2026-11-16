@@ -23,8 +23,14 @@ button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 img, video { display: block; max-width: 100%; }
 @media (hover: hover) and (pointer: fine) {
-  body, a, button, select, textarea, input, label, dialog,
-  .reviews-modal-overlay, .reviews-modal-dialog, .reviews-modal-dialog * {
+  html.has-custom-cursor,
+  html.has-custom-cursor body,
+  html.has-custom-cursor a,
+  html.has-custom-cursor button,
+  html.has-custom-cursor select,
+  html.has-custom-cursor textarea,
+  html.has-custom-cursor input,
+  html.has-custom-cursor label {
     cursor: none !important;
   }
 }
@@ -306,15 +312,14 @@ img, video { display: block; max-width: 100%; }
 .feedback-star { width: 20px; height: 20px; fill: transparent; stroke: currentColor; stroke-width: 1.25; vector-effect: non-scaling-stroke; }
 .feedback-rating-option.is-active .feedback-star { fill: currentColor; }
 .feedback-rating-readout { min-width: 48px; color: var(--gold-light); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
-.feedback-handle-group { margin-bottom: 22px; }
-.feedback-handle-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.feedback-handle-header label { margin-bottom: 0; }
-.feedback-handle-badge { padding: 3px 6px; border: 1px solid var(--gold); color: var(--gold-light); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
-.feedback-handle-row { display: flex; align-items: center; gap: 10px; }
-.feedback-handle-input { flex: 1; margin-top: 0; }
-.feedback-handle-dice { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 6px 12px; border: 1px solid var(--line); background: var(--void-soft); color: var(--gold-light); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; transition: border-color .18s ease, background-color .18s ease, color .18s ease; }
-.feedback-handle-dice:hover, .feedback-handle-dice:focus-visible { border-color: var(--gold); background: rgba(214,170,74,.15); color: #fff; }
-.feedback-handle-hint { display: block; margin-top: 8px; color: var(--muted); font-size: 9px; line-height: 1.5; letter-spacing: .04em; }
+.feedback-handle-group { margin-bottom: 22px; display: flex; flex-direction: column; gap: 8px; }
+.feedback-handle-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.feedback-handle-title { font-size: 10px; font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+.feedback-handle-badge { padding: 3px 8px; border: 1px solid rgba(214, 170, 74, 0.35); background: rgba(214, 170, 74, 0.1); color: var(--gold-light); font-size: 8px; letter-spacing: .12em; text-transform: uppercase; }
+.feedback-handle-display { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: var(--void-soft); border: 1px solid var(--line); border-bottom: 2px solid var(--gold); font-family: var(--mono); font-size: 14px; letter-spacing: .04em; }
+.feedback-handle-symbol { color: var(--gold); font-weight: 700; user-select: none; }
+.feedback-handle-val { color: var(--ivory); font-weight: 600; }
+.feedback-handle-hint { display: block; color: var(--muted); font-size: 9px; line-height: 1.5; letter-spacing: .04em; }
 
 .feedback-input { display: block; width: 100%; margin-top: 10px; padding: 12px 0; border: 0; border-bottom: 2px solid var(--line); outline: 0; background: transparent; color: var(--ivory); }
 .feedback-form textarea { display: block; width: 100%; margin-top: 10px; padding: 12px 0; border: 0; border-bottom: 2px solid var(--line); outline: 0; background: transparent; color: var(--ivory); }
@@ -343,6 +348,23 @@ img, video { display: block; max-width: 100%; }
   justify-content: center;
   padding: clamp(16px, 3vw, 36px);
   overflow-y: auto;
+  cursor: default !important;
+}
+.reviews-modal-overlay *,
+.reviews-modal-dialog,
+.reviews-modal-dialog * {
+  cursor: default !important;
+}
+.reviews-modal-dialog button,
+.reviews-modal-dialog select,
+.reviews-modal-dialog a,
+.reviews-modal-dialog input,
+.reviews-modal-dialog label {
+  cursor: pointer !important;
+}
+body:has(.reviews-modal-overlay) .site-cursor,
+.reviews-modal-overlay ~ .site-cursor {
+  display: none !important;
 }
 .reviews-modal-dialog {
   position: relative;

@@ -3,8 +3,8 @@
 <script>
   const cursor = document.querySelector<HTMLElement>('.site-cursor');
   const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  if (cursor && finePointer.matches && !reducedMotion.matches) {
+  if (cursor && finePointer.matches) {
+    document.documentElement.classList.add('has-custom-cursor');
     let frame = 0;
     let x = -100;
     let y = -100;
