@@ -553,7 +553,7 @@ function bearerToken(request) {
 }
 
 function isAdminRequest(request, env) {
-  const expected = String(env.ADMIN_TOKEN || 'localadmin123456789').trim();
+  const expected = String(env.ADMIN_TOKEN || '').trim();
   const received = bearerToken(request);
   return Boolean(expected && received && constantTimeEqual(expected, received));
 }
