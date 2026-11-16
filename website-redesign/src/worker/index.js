@@ -686,14 +686,15 @@ async function adminMetrics(request, env) {
   if (unauthorized) return unauthorized;
 
   try {
-    const [visitorTotals, visitorToday, downloadTotals, downloadToday, feedbackTotals, categoryRows, voteTotals] = await Promise.all([
+    const [visitorTotals, visitorToday, downloadTotals, downloadToday, feedbackTotals, categoryRows, voteTotals, downloadHistory] = await Promise.all([
       env.DB.prepare('SELECT COUNT(DISTINCT visitor_id) AS count FROM visitor_days').first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM visitor_days WHERE day = date('now')").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM analytics_events WHERE event = 'download_click'").first(),
       env.DB.prepare("SELECT COUNT(*) AS count FROM analytics_events WHERE event = 'download_click' AND created_at >= datetime('now', 'start of day')").first(),
-      env.DB.prepare('SELECT COUNT(*) AS total, SUM(CASE WHEN read_at IS NULL THEN 1 ELSE 0 END) AS unread, SUM(CASE WHEN hidden = 1 THEN 1 ELSE 0 END) AS hidden FROM feedback').first(),
+      env.DB.prepare('SELECT COUNT(*) AS total, SUM(CASE WHEN hidden = 1 THEN 1 ELSE 0 END) AS hidden FROM feedback').first(),
       env.DB.prepare('SELECT category, COUNT(*) AS count FROM feedback GROUP BY category').all(),
       env.DB.prepare('SELECT SUM(CASE WHEN vote = 1 THEN 1 ELSE 0 END) AS upvotes, SUM(CASE WHEN vote = -1 THEN 1 ELSE 0 END) AS downvotes FROM feedback_votes').first(),
+      env.DB.prepare("SELECT date(created_at) AS date, COUNT(*) AS count FROM analytics_events WHERE event = 'download_click' GROUP BY date(created_at) ORDER BY date(created_at) ASC LIMIT 30").all(),
     ]);
 
     const categories = Object.fromEntries(FEEDBACK_CATEGORIES.map((category) => [category, 0]));
@@ -701,12 +702,20 @@ async function adminMetrics(request, env) {
       if (FEEDBACK_CATEGORIES.includes(row.category)) categories[row.category] = Number(row.count || 0);
     }
 
+    const byDate = (downloadHistory.results || []).map((r) => ({
+      date: String(r.date),
+      count: Number(r.count || 0),
+    }));
+
     return jsonResponse({
       visitors: { total: Number(visitorTotals?.count || 0), today: Number(visitorToday?.count || 0) },
-      downloads: { total: Number(downloadTotals?.count || 0), today: Number(downloadToday?.count || 0) },
+      downloads: {
+        total: Number(downloadTotals?.count || 0),
+        today: Number(downloadToday?.count || 0),
+        byDate,
+      },
       feedback: {
         total: Number(feedbackTotals?.total || 0),
-        unread: Number(feedbackTotals?.unread || 0),
         hidden: Number(feedbackTotals?.hidden || 0),
         categories,
       },

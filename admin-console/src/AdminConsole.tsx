@@ -10,23 +10,27 @@ type FeedbackEntry = {
   category: FeedbackCategory;
   name: string | null;
   message: string;
-  read: boolean;
   hidden: boolean;
   upvotes: number;
   downvotes: number;
 };
 
+type DownloadDatePoint = {
+  date: string;
+  count: number;
+};
+
 type Metrics = {
   visitors: { total: number; today: number };
-  downloads: { total: number; today: number };
-  feedback: { total: number; unread: number; hidden: number; categories: Record<FeedbackCategory, number> };
+  downloads: { total: number; today: number; byDate?: DownloadDatePoint[] };
+  feedback: { total: number; hidden: number; categories: Record<FeedbackCategory, number> };
   votes: { up: number; down: number };
 };
 
 const CATEGORIES: Category[] = ['All', 'Thought', 'Bug', 'Question', 'Idea'];
 const DEFAULT_API_URL = import.meta.env.VITE_GRAFFITI_API_URL || 'https://app.graffiti-wall.workers.dev';
 const API_URL_KEY = 'graffiti_admin_api_url';
-const ADMIN_TOKEN_KEY = 'graffiti_admin_token_session';
+const ADMIN_TOKEN_KEY = 'graffiti_admin_token_permanent';
 
 function readStorage(storage: Storage, key: string, fallback: string) {
   try {
@@ -77,16 +81,53 @@ async function readJson(response: Response) {
   }
 }
 
+function DownloadsChart({ data, total }: { data: DownloadDatePoint[]; total: number }) {
+  const maxCount = Math.max(...data.map((d) => d.count), 1);
+  return (
+    <div className="admin-chart-shell">
+      <div className="admin-chart-bars-wrap">
+        <div className="admin-chart-bars">
+          {data.map((item) => {
+            const heightPct = Math.max(12, Math.round((item.count / maxCount) * 100));
+            return (
+              <div key={item.date} className="admin-chart-col" title={`${item.count} download${item.count === 1 ? '' : 's'} on ${item.date}`}>
+                <span className="admin-chart-count">{item.count}</span>
+                <div className="admin-chart-bar-track">
+                  <div className="admin-chart-bar-fill" style={{ height: `${heightPct}%` }} />
+                </div>
+                <span className="admin-chart-date">{item.date.slice(5)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="admin-chart-summary-list">
+        <div className="admin-chart-stat">
+          <span>Total Recorded</span>
+          <strong>{total}</strong>
+        </div>
+        <div className="admin-chart-stat">
+          <span>Active Days</span>
+          <strong>{data.length}</strong>
+        </div>
+        <div className="admin-chart-stat">
+          <span>Peak Daily Volume</span>
+          <strong>{maxCount}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminConsole() {
   const [apiUrl, setApiUrl] = useState(() => readStorage(window.localStorage, API_URL_KEY, DEFAULT_API_URL));
-  const [token, setToken] = useState(() => readStorage(window.sessionStorage, ADMIN_TOKEN_KEY, ''));
-  const [connected, setConnected] = useState(() => Boolean(readStorage(window.sessionStorage, ADMIN_TOKEN_KEY, '')));
+  const [token, setToken] = useState(() => readStorage(window.localStorage, ADMIN_TOKEN_KEY, ''));
+  const [connected, setConnected] = useState(() => Boolean(readStorage(window.localStorage, ADMIN_TOKEN_KEY, '')));
   const [category, setCategory] = useState<Category>('All');
-  const [unreadOnly, setUnreadOnly] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortOption>('newest');
   const [entries, setEntries] = useState<FeedbackEntry[]>([]);
-  const [unreadEntries, setUnreadEntries] = useState<FeedbackEntry[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [showDownloadsGraph, setShowDownloadsGraph] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState('');
@@ -115,17 +156,13 @@ export default function AdminConsole() {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ category, limit: '200' });
-      if (unreadOnly) params.set('unread', '1');
-      params.set('includeHidden', '1');
-      const [metricsPayload, entriesPayload, unreadPayload] = await Promise.all([
+      const params = new URLSearchParams({ category, limit: '200', includeHidden: '1' });
+      const [metricsPayload, entriesPayload] = await Promise.all([
         request('/api/admin/metrics'),
         request(`/api/admin/feedback?${params.toString()}`),
-        request('/api/admin/feedback?unread=1&limit=12'),
       ]);
       setMetrics(metricsPayload as unknown as Metrics);
       setEntries(Array.isArray(entriesPayload.entries) ? entriesPayload.entries as FeedbackEntry[] : []);
-      setUnreadEntries(Array.isArray(unreadPayload.entries) ? unreadPayload.entries as FeedbackEntry[] : []);
       setLastUpdated(new Date().toLocaleTimeString());
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load the admin dashboard.');
@@ -137,7 +174,7 @@ export default function AdminConsole() {
 
   useEffect(() => {
     if (connected) void loadData();
-  }, [connected, category, unreadOnly]);
+  }, [connected, category]);
 
   const connect = () => {
     const cleaned = cleanApiUrl(apiUrl);
@@ -148,21 +185,20 @@ export default function AdminConsole() {
     setApiUrl(cleaned);
     setToken(token.trim());
     writeStorage(window.localStorage, API_URL_KEY, cleaned);
-    writeStorage(window.sessionStorage, ADMIN_TOKEN_KEY, token.trim());
+    writeStorage(window.localStorage, ADMIN_TOKEN_KEY, token.trim());
     setConnected(true);
   };
 
   const disconnect = () => {
-    try { window.sessionStorage.removeItem(ADMIN_TOKEN_KEY); } catch { /* no-op */ }
+    try { window.localStorage.removeItem(ADMIN_TOKEN_KEY); } catch { /* no-op */ }
     setToken('');
     setConnected(false);
     setEntries([]);
-    setUnreadEntries([]);
     setMetrics(null);
     setError('');
   };
 
-  const updateEntry = async (id: number, patch: Partial<{ category: FeedbackCategory; read: boolean; hidden: boolean }>) => {
+  const updateEntry = async (id: number, patch: Partial<{ category: FeedbackCategory; hidden: boolean }>) => {
     try {
       await request(`/api/admin/feedback/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
       await loadData();
@@ -171,43 +207,33 @@ export default function AdminConsole() {
     }
   };
 
-  const renderEntry = (entry: FeedbackEntry, compact = false) => (
-    <article className={`admin-feedback-entry${entry.read ? '' : ' is-unread'}${entry.hidden ? ' is-hidden' : ''}`} key={entry.id}>
+  const renderEntry = (entry: FeedbackEntry) => (
+    <article className={`admin-feedback-entry${entry.hidden ? ' is-hidden' : ''}`} key={entry.id}>
       <div className="admin-feedback-entry-topline">
         <span className="admin-feedback-id">#{entry.id}</span>
         <span className="admin-feedback-category">{entry.category}</span>
         <span className="admin-feedback-rating" aria-label={`${entry.rating} out of 5 stars`}><RatingStars rating={entry.rating} /></span>
-        {!entry.read && <span className="admin-unread-badge">Unread</span>}
         {entry.hidden && <span className="admin-hidden-badge">Hidden</span>}
       </div>
       <p className="admin-feedback-message">{entry.message}</p>
       <div className="admin-feedback-meta">
         <span className="admin-feedback-author">
-          <span className="admin-handle-label">Device:</span> <strong>{entry.name || 'Anonymous'}</strong>
+          <span className="admin-handle-label">Device:</span> <strong>@{entry.name || 'Anonymous'}</strong>
         </span>
         <time dateTime={entry.created_at}>{formatDate(entry.created_at)}</time>
         <span>Up {entry.upvotes} · Down {entry.downvotes}</span>
       </div>
-      {!compact ? (
-        <div className="admin-feedback-actions">
-          <label>
-            Category
-            <select value={entry.category} onChange={(event) => { void updateEntry(entry.id, { category: event.target.value as FeedbackCategory }); }}>
-              {CATEGORIES.filter((value): value is FeedbackCategory => value !== 'All').map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
-          </label>
-          <button className="admin-action-button" type="button" onClick={() => { void updateEntry(entry.id, { read: !entry.read }); }}>
-            {entry.read ? 'Mark unread' : 'Mark read'}
-          </button>
-          <button className="admin-action-button" type="button" onClick={() => { void updateEntry(entry.id, { hidden: !entry.hidden }); }}>
-            {entry.hidden ? 'Restore' : 'Hide'}
-          </button>
-        </div>
-      ) : (
-        <div className="admin-feedback-actions admin-feedback-actions-compact">
-          <button className="admin-action-button" type="button" onClick={() => { void updateEntry(entry.id, { read: true }); }}>Mark read</button>
-        </div>
-      )}
+      <div className="admin-feedback-actions">
+        <label>
+          Category
+          <select value={entry.category} onChange={(event) => { void updateEntry(entry.id, { category: event.target.value as FeedbackCategory }); }}>
+            {CATEGORIES.filter((value): value is FeedbackCategory => value !== 'All').map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <button className="admin-action-button" type="button" onClick={() => { void updateEntry(entry.id, { hidden: !entry.hidden }); }}>
+          {entry.hidden ? 'Restore' : 'Hide'}
+        </button>
+      </div>
     </article>
   );
 
@@ -242,7 +268,7 @@ export default function AdminConsole() {
         <div className="admin-app-intro">
           <div>
             <span className="admin-kicker">REMOTE WORKER / D1</span>
-            <p>Review the public signal, classify rough edges, and keep the site feedback queue moving.</p>
+            <p>Review the public signal, classify rough edges, and inspect download telemetry.</p>
           </div>
           <span className="admin-app-version">VERSION 1.0</span>
         </div>
@@ -253,8 +279,8 @@ export default function AdminConsole() {
             <input type="url" value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} placeholder="https://app.graffiti-wall.workers.dev" />
           </label>
           <label>
-            Admin token
-            <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="ADMIN_TOKEN" onKeyDown={(event) => { if (event.key === 'Enter') connect(); }} />
+            Admin token (remembered on this device)
+            <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Enter admin token" onKeyDown={(event) => { if (event.key === 'Enter') connect(); }} />
           </label>
           <div className="admin-connection-actions">
             <button className="admin-primary-button" type="button" onClick={connect}>{connected ? 'Reconnect' : 'Connect'}</button>
@@ -267,24 +293,79 @@ export default function AdminConsole() {
         {!connected ? (
           <div className="admin-connect-empty">
             <strong>Connect the standalone admin app.</strong>
-            <p>Use the deployed Worker URL and the private ADMIN_TOKEN configured in Cloudflare. The token stays in this app session only.</p>
+            <p>Enter the deployed Worker URL and your private Cloudflare ADMIN_TOKEN. The token will be remembered on this device so you don't need to re-type it.</p>
           </div>
         ) : (
           <>
             <div className="admin-dashboard-heading">
               <div>
                 <span className="admin-kicker">OVERVIEW</span>
-                <p>Feedback, reach, downloads, and public votes.</p>
+                <p>Telemetry, downloads, ratings, and public feedback.</p>
               </div>
               <button className="admin-secondary-button" type="button" onClick={() => { void loadData(); }} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
             </div>
 
             <div className="admin-metric-grid">
-              <div className="admin-metric"><span>Visitors</span><strong>{metrics?.visitors.total ?? '—'}</strong><small>{metrics ? `${metrics.visitors.today} today` : 'Waiting for data'}</small></div>
-              <div className="admin-metric"><span>Downloads</span><strong>{metrics?.downloads.total ?? '—'}</strong><small>{metrics ? `${metrics.downloads.today} today` : 'Waiting for data'}</small></div>
-              <div className="admin-metric"><span>Feedback</span><strong>{metrics?.feedback.total ?? '—'}</strong><small>{metrics ? `${metrics.feedback.unread} unread` : 'Waiting for data'}</small></div>
-              <div className="admin-metric"><span>Votes</span><strong>{metrics ? metrics.votes.up + metrics.votes.down : '—'}</strong><small>{metrics ? `Up ${metrics.votes.up} · Down ${metrics.votes.down}` : 'Waiting for data'}</small></div>
+              <div className="admin-metric">
+                <span>Visitors</span>
+                <strong>{metrics?.visitors.total ?? 0}</strong>
+                <small>{metrics ? `${metrics.visitors.today} today` : 'Waiting for data'}</small>
+              </div>
+              <div
+                className={`admin-metric admin-metric-clickable ${showDownloadsGraph ? 'is-active' : ''}`}
+                onClick={() => setShowDownloadsGraph((prev) => !prev)}
+                role="button"
+                tabIndex={0}
+                title="Click to view downloads by date graph"
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowDownloadsGraph((prev) => !prev); }}
+              >
+                <div className="admin-metric-top">
+                  <span>Downloads</span>
+                  <span className="admin-metric-pill">{showDownloadsGraph ? 'Hide graph ▴' : 'View graph ▾'}</span>
+                </div>
+                <strong>{metrics?.downloads.total ?? 0}</strong>
+                <small>{metrics ? `${metrics.downloads.today} today · Click to toggle graph` : 'Waiting for data'}</small>
+              </div>
+              <div className="admin-metric">
+                <span>Feedback</span>
+                <strong>{metrics?.feedback.total ?? 0}</strong>
+                <small>{metrics ? `${metrics.feedback.hidden} hidden` : 'Waiting for data'}</small>
+              </div>
+              <div className="admin-metric">
+                <span>Votes</span>
+                <strong>{metrics ? metrics.votes.up + metrics.votes.down : 0}</strong>
+                <small>{metrics ? `Up ${metrics.votes.up} · Down ${metrics.votes.down}` : 'Waiting for data'}</small>
+              </div>
             </div>
+
+            {/* EXPANDABLE DOWNLOADS TIMELINE GRAPH */}
+            {showDownloadsGraph && (
+              <section className="admin-downloads-panel" aria-labelledby="admin-downloads-title">
+                <div className="admin-section-heading">
+                  <div>
+                    <span className="admin-kicker">TELEMETRY / DOWNLOADS TIMELINE</span>
+                    <h2 id="admin-downloads-title">Downloads by date</h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="admin-secondary-button"
+                    onClick={() => setShowDownloadsGraph(false)}
+                  >
+                    Close graph ×
+                  </button>
+                </div>
+
+                <div className="admin-graph-container">
+                  {(!metrics?.downloads.byDate || metrics.downloads.byDate.length === 0) ? (
+                    <div className="admin-graph-empty">
+                      <p>No downloads recorded yet. As visitors download Graffiti, daily counts will appear here.</p>
+                    </div>
+                  ) : (
+                    <DownloadsChart data={metrics.downloads.byDate} total={metrics.downloads.total} />
+                  )}
+                </div>
+              </section>
+            )}
 
             <div className="admin-console-grid">
               <section className="admin-feed-panel" aria-labelledby="admin-feedback-heading">
@@ -293,7 +374,6 @@ export default function AdminConsole() {
                     <span className="admin-kicker">FEEDBACK QUEUE</span>
                     <h2 id="admin-feedback-heading">Review feedback</h2>
                   </div>
-                  <label className="admin-checkbox"><input type="checkbox" checked={unreadOnly} onChange={(event) => setUnreadOnly(event.target.checked)} /> Unread only</label>
                 </div>
                 <div className="admin-filter-bar">
                   <div className="admin-category-tabs" role="tablist" aria-label="Feedback categories">
@@ -317,20 +397,21 @@ export default function AdminConsole() {
                 </div>
               </section>
 
-              <aside className="admin-unread-panel" aria-labelledby="admin-unread-heading">
+              <aside className="admin-summary-sidebar" aria-labelledby="admin-summary-heading">
                 <div className="admin-section-heading">
                   <div>
-                    <span className="admin-kicker">ACTION NEEDED</span>
-                    <h2 id="admin-unread-heading">Unread</h2>
+                    <span className="admin-kicker">CLASSIFICATION</span>
+                    <h2 id="admin-summary-heading">Breakdown</h2>
                   </div>
-                  <strong className="admin-unread-count">{metrics?.feedback.unread ?? 0}</strong>
-                </div>
-                <div className="admin-unread-list">
-                  {unreadEntries.length === 0 ? <p className="admin-empty">Nothing waiting.</p> : unreadEntries.map((entry) => renderEntry(entry, true))}
                 </div>
                 <div className="admin-category-summary">
-                  <span>Categories</span>
-                  {CATEGORIES.filter((value): value is FeedbackCategory => value !== 'All').map((value) => <div key={value}><span>{value}</span><strong>{metrics?.feedback.categories[value] ?? 0}</strong></div>)}
+                  <span>Feedback Categories</span>
+                  {CATEGORIES.filter((value): value is FeedbackCategory => value !== 'All').map((value) => (
+                    <div key={value}>
+                      <span>{value}</span>
+                      <strong>{metrics?.feedback.categories[value] ?? 0}</strong>
+                    </div>
+                  ))}
                 </div>
                 <p className="admin-updated">{lastUpdated ? `Updated ${lastUpdated}` : 'Not updated yet'}</p>
               </aside>
