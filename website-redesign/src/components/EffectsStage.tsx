@@ -125,12 +125,10 @@ export default function EffectsStage() {
               );
             })}
 
-            {/* Unique Cyber-Telemetry Loading Animation */}
+            {/* Typographic Shining Loading Animation */}
             <SignalLoader
               visible={!isCurrentLoaded}
-              mode="effect"
-              title={`ACQUIRING // ${name.toUpperCase()}`}
-              subtitle={isCurrentLoaded ? 'STREAM LOCKED' : 'STREAMING HARDWARE BUFFER…'}
+              name={name}
             />
 
             <div className="stage-crosshair" aria-hidden="true"><i></i><i></i></div>

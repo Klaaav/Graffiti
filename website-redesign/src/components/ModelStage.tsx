@@ -83,12 +83,10 @@ export default function ModelStage() {
       <div className="model-viewport">
         {visible && <model-viewer ref={viewer} src="/models/model.glb" alt="Interactive 3D wallpaper model" camera-controls={false} interaction-prompt="none" camera-orbit="0deg 72deg 3.8m" min-camera-orbit="auto auto 3.8m" max-camera-orbit="auto auto 3.8m" min-field-of-view="30deg" max-field-of-view="30deg" exposure="1.1" shadow-intensity="0.7" loading="lazy" />}
         
-        {/* Unique Cyber-Telemetry Loading Animation for 3D WebView */}
+        {/* Typographic Shining Loading Animation for Web Wallpaper */}
         <SignalLoader
           visible={!loaded}
-          mode="model"
-          title="INITIALIZING 3D COMPOSITOR"
-          subtitle="PARSING GLB // COMPILING SHADERS…"
+          name="Webwallpaper"
         />
 
         <div className="model-lock">WEBVIEW<br /><strong>3D</strong></div>
