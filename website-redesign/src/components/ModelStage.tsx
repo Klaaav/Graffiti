@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import SignalLoader from './SignalLoader';
 
 export default function ModelStage() {
   const section = useRef<HTMLElement>(null);
@@ -81,9 +82,17 @@ export default function ModelStage() {
       </div>
       <div className="model-viewport">
         {visible && <model-viewer ref={viewer} src="/models/model.glb" alt="Interactive 3D wallpaper model" camera-controls={false} interaction-prompt="none" camera-orbit="0deg 72deg 3.8m" min-camera-orbit="auto auto 3.8m" max-camera-orbit="auto auto 3.8m" min-field-of-view="30deg" max-field-of-view="30deg" exposure="1.1" shadow-intensity="0.7" loading="lazy" />}
-        {!loaded && <span className="model-loading" aria-live="polite">Loading scene…</span>}
+        
+        {/* Unique Cyber-Telemetry Loading Animation for 3D WebView */}
+        <SignalLoader
+          visible={!loaded}
+          mode="model"
+          title="INITIALIZING 3D COMPOSITOR"
+          subtitle="PARSING GLB // COMPILING SHADERS…"
+        />
+
         <div className="model-lock">WEBVIEW<br /><strong>3D</strong></div>
-        <div className="model-hint">Move your pointer to look around</div>
+        <div className="model-hint">{loaded ? 'Move your pointer to look around' : 'Calibrating view…'}</div>
       </div>
     </section>
   );
